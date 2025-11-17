@@ -1,81 +1,97 @@
-# src/model/llm_client.py
+"""I wrap LM Studio's OpenAI-style endpoint and translate world state to JSON-friendly replies."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+import json
 
-try:
-    # If llama-cpp-python is not installed yet, I handle that
-    from llama_cpp import Llama
-except ImportError:
-    Llama = None  # type: ignore
+import requests
 
 
 @dataclass
 class LLMConfig:
-    model_path: str = "models/llama-3-8b-instruct-q4_k_m.gguf"
-    n_ctx: int = 2048
-    n_gpu_layers: int = 50
+    """I store the base_url, model name, temperature, max_tokens, and timeout for LM Studio at 127.0.0.1."""
+    base_url: str = "http://127.0.0.1:1234/v1/chat/completions"
+    model: str = "meta-llama-3.1-8b-instruct"
     temperature: float = 0.1
     max_tokens: int = 128
+    timeout: int = 30
 
 
 class LLMDecisionClient:
-    def __init__(self, config: Optional[LLMConfig] = None, enabled: bool = False):
+    """I am a thin HTTP client that can be toggled off to keep the simulation rule-based."""
+
+    def __init__(self, config: LLMConfig | None = None, enabled: bool = False):
+        """I store the configuration and whether the client is currently active."""
         self.config = config or LLMConfig()
         self.enabled = enabled
-        self._llm: Optional[Llama] = None
-
-        if self.enabled:
-            if Llama is None:
-                raise RuntimeError(
-                    "llama-cpp-python is not installed but LLMDecisionClient is enabled."
-                )
-            # I load the local GGUF model once here.
-            self._llm = Llama(
-                model_path=self.config.model_path,
-                n_ctx=self.config.n_ctx,
-                n_gpu_layers=self.config.n_gpu_layers,
-                verbose=False,
-            )
 
     def compose_prompt(self, state: Dict[str, Any]) -> str:
-        return (
-            "You are the ruler of the territory 'East'.\n"
-            "Decide ONE action based on the current state.\n"
-            "Valid actions: 'gather', 'consume', 'wait'.\n"
-            "Respond ONLY with JSON in this format:\n"
-            '{"action": <action>, "target": "None", "reason": <short reason>}.\n\n'
-            f"Current state: {state}\n"
-            "JSON:"
+        """I describe the state, enumerate valid actions, and demand JSON output."""
+        territory = state.get("territory") or state.get("name", "Unknown")
+        food = state.get("food", "unknown")
+        wealth = state.get("wealth", "unknown")
+        relation = state.get("relation_to_neighbor", "neutral")
+        step = state.get("step", "unknown")
+        # I embed the current readings and remind the model of the restricted action space.
+        prompt = (
+            f"You govern the territory named {territory}.\n"
+            f"Current step: {step}.\n"
+            f"Resources -> food: {food}, wealth: {wealth}, relation to neighbor: {relation}.\n"
+            "Choose exactly one action from: \"gather\", \"consume\", \"wait\".\n"
+            "Respond ONLY with JSON like {\"action\": ..., \"target\": \"None\", \"reason\": ...}."
         )
+        # I restate the {"action","target","reason"} envelope so parsing stays simple
+        return prompt
 
     def decide(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        if not self.enabled or self._llm is None:
+        """I send the composed prompt to LM Studio and interpret the JSON reply."""
+        # I ensure callers do not make HTTP requests when this client is disabled
+        if not self.enabled:
             raise RuntimeError("LLMDecisionClient is disabled.")
 
+        # I convert the structured state into a textual promp
         prompt = self.compose_prompt(state)
-
-        output = self._llm(
-            prompt,
-            max_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
-            stop=["\n\n"],
+        # I follow the OpenAI chat-completion schema so LM Studio can understand the request
+        response = requests.post(
+            self.config.base_url,
+            json={
+                "model": self.config.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a careful decision-making ruler agent.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": self.config.max_tokens,
+                "temperature": self.config.temperature,
+            },
+            timeout=self.config.timeout,
         )
-        text = output["choices"][0]["text"].strip()
+        # I raise if the HTTP layer fails so the caller can handle errors.
+        response.raise_for_status()
+        data = response.json()
+        # I pull the assistant reply text from the first choice.
+        text = data["choices"][0]["message"]["content"].strip()
 
-        import json
-
+        decision: Dict[str, Any] = {}
         try:
+            # I expect clean JSON so I try a straight parse first
             decision = json.loads(text)
         except json.JSONDecodeError:
-            # I try a basic cleanup before giving up.
+            # I fall back to a lightweight cleanup when the model adds noise.
             text_fixed = text.replace("'", '"')
             brace_idx = text_fixed.rfind("}")
             if brace_idx != -1:
                 text_fixed = text_fixed[: brace_idx + 1]
-            decision = json.loads(text_fixed)
+            try:
+                decision = json.loads(text_fixed)
+            except json.JSONDecodeError:
+                decision = {}
 
+        # I normalize the output so downstream callers always receive defaults
         return {
             "action": decision.get("action", "wait"),
             "target": decision.get("target", "None"),

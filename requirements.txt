@@ -1,11 +1,10 @@
+﻿# I depend on mesa for agent-based modeling and requests for LLM HTTP calls.
 mesa>=3.0.0
 numpy
 pandas
 pyyaml
+requests
 rich
-
-# LLM integration (local)
-#llama-cpp-python[cuda]
 
 # Optional dev helpers
 ipykernel
