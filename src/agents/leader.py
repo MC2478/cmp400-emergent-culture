@@ -1,18 +1,23 @@
-"""I define ``TerritoryState`` and ``LeaderAgent`` with rule-based and LLM decision paths."""
+"""I define ``TerritoryState`` and ``LeaderAgent`` for the CMP400 feasibility demo where a single
+leader alternates between deterministic rules and LLM-backed decisions."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import mesa
 
 from src.model.llm_client import LLMDecisionClient
 
+# I centralise the rule set here so both the LLM and rule-based flows share the same vocabulary.
+ALLOWED_ACTIONS: set[str] = {"gather", "consume", "wait"}
+
 
 @dataclass
 class TerritoryState:
-    """I use this dataclass to hold a territory's name, food, wealth, and neighbor relation."""
+    """I keep the mutable stats for our lone territory so later I can swap in multiple regions."""
+
     name: str
     food: int
     wealth: int
@@ -20,14 +25,15 @@ class TerritoryState:
 
 
 class LeaderAgent(mesa.Agent):
-    """I represent the political leader who can rely on rules or an ``LLMDecisionClient``."""
+    """I represent the single political leader in the prototype and switch between rule-based and
+    LLM-assisted decision making."""
 
     def __init__(
         self,
         model: "WorldModel",
         territory: TerritoryState,
         llm_client: Optional[LLMDecisionClient] = None,
-    ):
+    ) -> None:
         """I receive the model, initial territory, and optional LLM helper."""
         super().__init__(model=model)
         # I keep a reference to the mutable territory state.
@@ -69,7 +75,10 @@ class LeaderAgent(mesa.Agent):
 
     def apply_action(self, decision: Dict[str, Any]) -> None:
         """I mutate the territory state according to the chosen action."""
-        action = decision.get("action", "wait")
+        action = (decision.get("action") or "wait").lower()
+        if action not in ALLOWED_ACTIONS:
+            # I sanitize unknown actions to "wait" so a rogue response cannot break the feasibility demo.
+            action = "wait"
 
         # I increase food supply when gathering.
         if action == "gather":
@@ -84,18 +93,37 @@ class LeaderAgent(mesa.Agent):
 
     def step(self) -> None:
         """I choose an action (LLM preferred) and then execute and log it."""
+        decision: Optional[Dict[str, Any]] = None
+        llm_used = False
+        state_before = {"food": self.territory.food, "wealth": self.territory.wealth}
+
         if self.llm_client is not None and self.llm_client.enabled:
             try:
                 # I attempt to get the richer LLM decision first.
                 decision = self.llm_client.decide(self._state_dict())
             except Exception as e:  # pragma: no cover - logging guard
-                # I warn when the LLM path fails so I know to investigate.
-                print(f"[WARN] LLM decision failed ({e}), falling back to rules.")
-                decision = self.decide_rule_based()
-        else:
-            # I default to the deterministic policy when LLM support is absent.
+                # I want the Week 11 feasibility demo to keep running even if the LLM endpoint wobbles.
+                print(f"[WARN] LLM decision failed ({e}), falling back to rule-based policy.")
+
+        invalid_llm = True
+        if isinstance(decision, dict):
+            action_value = decision.get("action")
+            if isinstance(action_value, str):
+                normalized = action_value.lower()
+                if normalized in ALLOWED_ACTIONS:
+                    decision["action"] = normalized
+                    invalid_llm = False
+                    llm_used = True
+
+        if invalid_llm:
+            # I log this so I remember the sim intentionally dropped back to deterministic rules for robustness.
+            if decision is not None:
+                print("[INFO] LLM produced an invalid action, so I am using the rule-based policy instead.")
             decision = self.decide_rule_based()
+            llm_used = False
 
         # I enact the decision and ask the model to log the outcome.
         self.apply_action(decision)
-        self.model.log_step(self, decision)
+        state_after = {"food": self.territory.food, "wealth": self.territory.wealth}
+        # I pass both states so the chronicle captures before/after for the feasibility artifact.
+        self.model.log_step(self, decision, state_before, state_after, llm_used)
