@@ -85,18 +85,54 @@ def summarize_chronicle(path: Path) -> None:
         print("Chronicle is empty.")
         return
 
-    actions = Counter(entry.get("action", "unknown") for entry in data)
-    food_values = [entry.get("food_after", entry.get("food_before", 0)) for entry in data]
-    food_min = min(food_values)
-    food_max = max(food_values)
-    food_mean = mean(food_values)
-    total_steps = len(data)
+    actions = Counter(entry.get("action", "unknown") for entry in data if entry.get("action"))
+    total_events = len(data)
+
+    def describe(series: list[float]) -> tuple[float | None, float | None, float | None]:
+        if not series:
+            return (None, None, None)
+        return (min(series), mean(series), max(series))
+
+    east_pop = []
+    west_pop = []
+    east_food = []
+    west_food = []
+
+    for entry in data:
+        if entry.get("event_type") == "upkeep":
+            east = entry.get("east", {})
+            west = entry.get("west", {})
+            if east:
+                if "population_after" in east:
+                    east_pop.append(east["population_after"])
+                if "food_after" in east:
+                    east_food.append(east["food_after"])
+            if west:
+                if "population_after" in west:
+                    west_pop.append(west["population_after"])
+                if "food_after" in west:
+                    west_food.append(west["food_after"])
+
+    east_pop_stats = describe(east_pop)
+    west_pop_stats = describe(west_pop)
+    east_food_stats = describe(east_food)
+    west_food_stats = describe(west_food)
+
+    def print_stats(label: str, stats: tuple[float | None, float | None, float | None]) -> None:
+        lo, avg, hi = stats
+        if lo is None:
+            print(f"  {label} -> n/a")
+        else:
+            print(f"  {label} -> min {lo:.1f}, mean {avg:.1f}, max {hi:.1f}")
 
     # I skim these stats so I can confirm the log artifact looks sensible before adding it to the feasibility demo.
     print("Chronicle summary:")
-    print(f"  Steps logged: {total_steps}")
+    print(f"  Events logged: {total_events}")
     print(f"  Action counts: {dict(actions)}")
-    print(f"  Food stats -> min: {food_min}, mean: {food_mean:.2f}, max: {food_max}")
+    print_stats("East pop", east_pop_stats)
+    print_stats("West pop", west_pop_stats)
+    print_stats("East food", east_food_stats)
+    print_stats("West food", west_food_stats)
 
 
 if __name__ == "__main__":

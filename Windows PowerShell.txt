@@ -1,0 +1,240 @@
+(.venv) PS C:\Users\micha\Documents\cmp400-emergent-culture> python main.py
+Step 1:
+  West: action=focus_food (LLM: yes)
+    Resources: food 3.0->3.5, wealth 5.0->5.0
+    Pop: 100
+    Reason: food is near the requirement and can meet quota with this action
+  East: action=focus_food (LLM: yes)
+    Resources: food 3.0->4.5, wealth 5.0->5.0
+    Pop: 100
+    Reason: food is near the requirement and can meet quota
+
+  Negotiation at step 1 (balanced_trade):
+    East: "I'm willing to share some of our surplus food with you."
+    West: "We could use more food, but I'd rather trade for it than give away wealth."
+    Trade flows -> food East->West 1, wealth West->East 0
+      East after trade: food 4.5->3.5, wealth 5.0->5.0
+      West after trade: food 3.5->4.5, wealth 5.0->5.0
+      Relation now: cordial
+
+  West upkeep: food 4.5->3.5, pop 100->200, required_food 1
+  East upkeep: food 3.5->2.5, pop 100->200, required_food 1
+
+------------------------------------------------------------
+
+Step 2:
+  West: action=focus_food (LLM: yes)
+    Resources: food 3.5->4.5, wealth 5.0->5.0
+    Pop: 200
+    Reason: food is near the requirement and can meet quota with this action
+  East: action=focus_food (LLM: yes)
+    Resources: food 2.5->5.5, wealth 5.0->5.0
+    Pop: 200
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 2 (balanced_trade):
+    East: "I'm willing to share some of our surplus food with you."
+    West: "That would be a big help, we're struggling to meet our needs."
+    Trade flows -> food East->West 1, wealth West->East 0
+      East after trade: food 5.5->4.5, wealth 5.0->5.0
+      West after trade: food 4.5->5.5, wealth 5.0->5.0
+      Relation now: allied
+
+  West upkeep: food 5.5->3.5, pop 200->300, required_food 2
+  East upkeep: food 4.5->2.5, pop 200->200, required_food 2
+
+------------------------------------------------------------
+
+Step 3:
+  West: action=focus_food (LLM: yes)
+    Resources: food 3.5->5.0, wealth 5.0->5.0
+    Pop: 300
+    Reason: food is near the requirement and can meet the quota
+  East: action=focus_food (LLM: yes)
+    Resources: food 2.5->5.5, wealth 5.0->5.0
+    Pop: 200
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 3 (no_trade):
+    East: "I'm struggling to meet my population's needs, can we trade some food?"
+    West: "We're in a similar situation, but I think we can spare 0.5 units of food from you."
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 5.5->5.5, wealth 5.0->6.0
+      West after trade: food 5.0->5.0, wealth 5.0->4.0
+      Relation now: allied
+
+  West upkeep: food 5.0->2.0, pop 300->300, required_food 3
+  East upkeep: food 5.5->3.5, pop 200->200, required_food 2
+
+------------------------------------------------------------
+
+Step 4:
+  West: action=focus_food (LLM: yes)
+    Resources: food 2.0->3.5, wealth 4.0->4.0
+    Pop: 300
+    Reason: meets quota and food is near requirement
+  East: action=focus_food (LLM: yes)
+    Resources: food 3.5->6.5, wealth 6.0->6.0
+    Pop: 200
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 4 (balanced_trade):
+    East: "I'm willing to share some of our surplus food with you."
+    West: "That would be a great help, we're struggling to meet our needs."
+    Trade flows -> food East->West 1, wealth West->East 0
+      East after trade: food 6.5->5.5, wealth 6.0->6.0
+      West after trade: food 3.5->4.5, wealth 4.0->4.0
+      Relation now: allied
+
+  West upkeep: food 4.5->1.5, pop 300->400, required_food 3
+  East upkeep: food 5.5->3.5, pop 200->200, required_food 2
+
+------------------------------------------------------------
+
+Step 5:
+  West: action=focus_food (LLM: yes)
+    Resources: food 1.5->3.0, wealth 4.0->5.5
+    Pop: 400
+    Reason: food is near the requirement and can meet it with this action
+  East: action=focus_food (LLM: yes)
+    Resources: food 3.5->6.5, wealth 6.0->6.0
+    Pop: 200
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 5 (balanced_trade):
+    East: "We could help each other out with some food and wealth."
+    West: "I'm struggling to feed my people, can you spare some of your excess?"
+    Trade flows -> food East->West 1, wealth West->East 0
+      East after trade: food 6.5->5.5, wealth 6.0->6.0
+      West after trade: food 3.0->4.0, wealth 5.5->5.5
+      Relation now: allied
+
+  West upkeep: food 4.0->0, pop 400->400, required_food 4
+  East upkeep: food 5.5->3.5, pop 200->300, required_food 2
+
+------------------------------------------------------------
+
+Step 6:
+  West: action=focus_food (LLM: yes)
+    Resources: food 0->1.5, wealth 5.5->7.0
+    Pop: 400
+    Reason: food is near the requirement and can meet it with this action
+  East: action=focus_food (LLM: yes)
+    Resources: food 3.5->8.0, wealth 6.0->6.0
+    Pop: 300
+    Reason: food is near the requirement and can meet the quota
+
+  Negotiation at step 6 (balanced_trade):
+    East: "I can spare some food to help you out, West."
+    West: "That would be a big help, East. I'll send some wealth in return."
+    Trade flows -> food East->West 2, wealth West->East 1
+      East after trade: food 8.0->6.0, wealth 6.0->7.0
+      West after trade: food 1.5->3.5, wealth 7.0->6.0
+      Relation now: allied
+
+  West upkeep: food 3.5->0, pop 400->350.0, required_food 4
+  East upkeep: food 6.0->3.0, pop 300->300, required_food 3
+
+------------------------------------------------------------
+
+Step 7:
+  West: action=focus_food (LLM: yes)
+    Resources: food 0->1.5, wealth 6.0->6.0
+    Pop: 350.0
+    Reason: Meet population food needs and avoid starvation.
+  East: action=focus_food (LLM: yes)
+    Resources: food 3.0->7.5, wealth 7.0->7.0
+    Pop: 300
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 7 (balanced_trade):
+    East: "I can spare some food to help you out, West."
+    West: "That would be a huge relief, East. I'll send some wealth in return."
+    Trade flows -> food East->West 2, wealth West->East 1
+      East after trade: food 7.5->5.5, wealth 7.0->8.0
+      West after trade: food 1.5->3.5, wealth 6.0->5.0
+      Relation now: allied
+
+  West upkeep: food 3.5->0.5, pop 350.0->350.0, required_food 3
+  East upkeep: food 5.5->2.5, pop 300->400, required_food 3
+
+------------------------------------------------------------
+
+Step 8:
+  West: action=focus_food (LLM: yes)
+    Resources: food 0.5->2.0, wealth 5.0->5.0
+    Pop: 350.0
+    Reason: food production meets quota and is near requirement
+  East: action=focus_food (LLM: yes)
+    Resources: food 2.5->7.0, wealth 8.0->8.5
+    Pop: 400
+    Reason: food is near the requirement and can meet the quota
+
+  Negotiation at step 8 (balanced_trade):
+    East: "I can spare some food to help you out, West."
+    West: "That would be a huge relief, East. I'll send some wealth in return."
+    Trade flows -> food East->West 2, wealth West->East 1
+      East after trade: food 7.0->5.0, wealth 8.5->9.5
+      West after trade: food 2.0->4.0, wealth 5.0->4.0
+      Relation now: allied
+
+  West upkeep: food 4.0->1.0, pop 350.0->450.0, required_food 3
+  East upkeep: food 5.0->1.0, pop 400->400, required_food 4
+
+------------------------------------------------------------
+
+Step 9:
+  West: action=focus_food (LLM: yes)
+    Resources: food 1.0->2.5, wealth 4.0->5.5
+    Pop: 450.0
+    Reason: food production meets quota and is near requirement
+  East: action=focus_food (LLM: yes)
+    Resources: food 1.0->5.5, wealth 9.5->10.0
+    Pop: 400
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 9 (balanced_trade):
+    East: "I'm willing to share some of our excess food with you."
+    West: "That would be a great help, we're struggling to meet our needs."
+    Trade flows -> food East->West 1, wealth West->East 2
+      East after trade: food 5.5->4.5, wealth 10.0->12.0
+      West after trade: food 2.5->3.5, wealth 5.5->3.5
+      Relation now: allied
+
+  West upkeep: food 3.5->0, pop 450.0->400.0, required_food 4
+  East upkeep: food 4.5->0.5, pop 400->500, required_food 4
+
+------------------------------------------------------------
+
+Step 10:
+  West: action=focus_food (LLM: yes)
+    Resources: food 0->1.5, wealth 3.5->5.0
+    Pop: 400.0
+    Reason: food production meets quota and is near requirement
+  East: action=focus_food (LLM: yes)
+    Resources: food 0.5->6.5, wealth 12.0->12.5
+    Pop: 500
+    Reason: meets quota and food is near requirement
+
+  Negotiation at step 10 (balanced_trade):
+    East: "I can spare some food to help you out, West."
+    West: "That would be a huge relief, East. I'll send some wealth in return."
+    Trade flows -> food East->West 2, wealth West->East 1
+      East after trade: food 6.5->4.5, wealth 12.5->13.5
+      West after trade: food 1.5->3.5, wealth 5.0->4.0
+      Relation now: allied
+
+  West upkeep: food 3.5->0, pop 400.0->350.0, required_food 4
+  East upkeep: food 4.5->0, pop 500->450.0, required_food 5
+
+------------------------------------------------------------
+
+Saved chronicle to C:\Users\micha\Documents\cmp400-emergent-culture\logs\demo_seed42_steps10.json
+Chronicle summary:
+  Events logged: 40
+  Action counts: {'focus_food': 20}
+  East pop -> min 200.0, mean 315.0, max 500.0
+  West pop -> min 200.0, mean 350.0, max 450.0
+  East food -> min 0.0, mean 2.2, max 3.5
+  West food -> min 0.0, mean 1.2, max 3.5
+(.venv) PS C:\Users\micha\Documents\cmp400-emergent-culture>

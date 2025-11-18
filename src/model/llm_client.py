@@ -12,11 +12,10 @@ import requests
 # I mirror the allowed action list locally (the source lives in ``LeaderAgent``) so the prompt
 # instructions and validation stay consistent without creating circular imports.
 _ALLOWED_ACTIONS: tuple[str, ...] = (
-    "gather",
-    "consume",
+    "focus_food",
+    "focus_wealth",
+    "balanced",
     "wait",
-    "support_neighbor",
-    "exploit_neighbor",
 )
 
 @dataclass
@@ -44,31 +43,50 @@ class LLMDecisionClient:
         territory = state.get("territory") or state.get("name", "Unknown")
         food = state.get("food", "unknown")
         wealth = state.get("wealth", "unknown")
+        population = state.get("population", "unknown")
+        required_food = state.get("required_food", "unknown")
         relation = state.get("relation_to_neighbor", "neutral")
         step = state.get("step", "unknown")
         neighbor_name = state.get("neighbor_name", "West")
         neighbor_food = state.get("neighbor_food", "unknown")
         neighbor_wealth = state.get("neighbor_wealth", "unknown")
+        neighbor_population = state.get("neighbor_population", "unknown")
+        max_food_ff = state.get("max_food_if_focus_food", "unknown")
+        max_food_fw = state.get("max_food_if_focus_wealth", "unknown")
+        max_wealth_ff = state.get("max_wealth_if_focus_food", "unknown")
+        max_wealth_fw = state.get("max_wealth_if_focus_wealth", "unknown")
+        can_hit_ff = state.get("can_meet_quota_if_focus_food", "unknown")
+        can_hit_fw = state.get("can_meet_quota_if_focus_wealth", "unknown")
+        # I give the LLM a minimal but clear action menu so it contrasts food vs wealth priorities.
         actions_hint = (
-            '- "gather": collect more food for East.\n'
-            '- "consume": spend some stored food on current needs.\n'
-            '- "wait": keep everything unchanged this step.\n'
-            '- "support_neighbor": send a little food to West and improve relations.\n'
-            '- "exploit_neighbor": take a little food from West and worsen relations.\n'
+            '- "focus_food": allocate roughly 75% of work points to food production (rest to wealth).\n'
+            '- "focus_wealth": allocate roughly 75% of work points to wealth production (rest to food).\n'
+            '- "balanced": split work points about evenly between food and wealth.\n'
+            '- "wait": allocate zero work points; resources will not grow this step.\n'
         )
-        # I embed the current readings, including the neighbour snapshot, so the LLM sees the tiny political choice.
+        # I embed the current readings, including the neighbour snapshot, so the LLM sees the small economic contrast.
         prompt = (
-            f"You lead the territory {territory} (think of it as East) at step {step}.\n"
+            f"You currently lead {territory} at step {step}.\n"
+            f"Population: {population} people needing about {required_food} food this step to avoid starvation.\n"
+            f"Work points available this step: {state.get('work_points', 'unknown')} (100 population ≈ 1 point).\n"
             f"Your resources -> food: {food}, wealth: {wealth}.\n"
-            f"You also monitor the neighbour {neighbor_name} (West) with food {neighbor_food} and wealth {neighbor_wealth}.\n"
-            f"Current relationship to the neighbour: {relation}.\n"
+            f"The neighbouring territory {neighbor_name} has food {neighbor_food}, wealth {neighbor_wealth}, "
+            f"population {neighbor_population}, and the relationship is {relation}.\n"
+            f"Current relationship score: {state.get('relation_score', 'unknown')}.\n"
+            "Production depends entirely on work allocation: 100 population = 1 work point. "
+            "There is no automatic production, so if you wait you gain nothing.\n"
+            f"If you focus on food you can reach food ≈ {max_food_ff} and wealth ≈ {max_wealth_ff} "
+            f"(meets quota? {can_hit_ff}). If you focus on wealth you can reach food ≈ {max_food_fw} "
+            f"and wealth ≈ {max_wealth_fw} (meets quota? {can_hit_fw}).\n"
             "Choose exactly one of these actions:\n"
             f"{actions_hint}"
             "Respond with ONE JSON object like "
             '{"action": <allowed_action>, "target": "None", "reason": <short sentence>}.\n'
+            "Avoiding population loss is the top priority: if focus_food can meet the quota and food is near the requirement, prioritise focus_food. "
+            "If even focus_food cannot reach the quota, consider focus_wealth to earn trade resources.\n"
             "Do not output explanations or code fences, only that JSON.\n"
         )
-        # I make the JSON instructions painfully explicit so the Week 11 feasibility demo stays reliable.
+        # I encode the survival-first goal in the prompt so the LLM keeps the population alive for the demo narrative.
         return prompt
 
     def _parse_response(self, raw_text: str) -> Dict[str, Any] | None:
@@ -104,6 +122,95 @@ class LLMDecisionClient:
 
         candidate = candidate.replace("'", '"')
         return _try_load(candidate)
+
+    def compose_negotiation_prompt(self, state: Dict[str, Any]) -> str:
+        """I outline the joint state so the LLM can improvise a mini dialogue and trade."""
+        step = state.get("step", "unknown")
+        east = state.get("east", {})
+        west = state.get("west", {})
+        last_actions = state.get("last_actions", {})
+        prompt = (
+            f"Simulate a brief negotiation at step {step} between two leaders, East and West (this happens before upkeep/starvation each tick).\n"
+            f"Current relationship status: {east.get('relation_to_neighbor', 'neutral')} (score {east.get('relation_score', 0)}).\n"
+            f"East -> food: {east.get('food', 'unknown')}, wealth: {east.get('wealth', 'unknown')}, "
+            f"population: {east.get('population', 'unknown')}.\n"
+            f"West -> food: {west.get('food', 'unknown')}, wealth: {west.get('wealth', 'unknown')}, "
+            f"population: {west.get('population', 'unknown')}.\n"
+            f"Last actions -> East: {last_actions.get('east')}, West: {last_actions.get('west')}.\n"
+            "Output a short dialogue line for each leader plus a proposed trade of food/wealth that keeps flows small.\n"
+            'Respond with JSON like {"east_line": "...", "west_line": "...", '
+            '"trade": {"food_from_east_to_west": 0, "wealth_from_west_to_east": 0, "reason": "..."}}.\n'
+            "Positive food_from_east_to_west means East ships food to West (negative means West ships food to East). "
+            "Positive wealth_from_west_to_east means West sends wealth to East (negative means the reverse). "
+            "Keep trades realistic: you cannot send more of a resource than you currently have, and the overall goal is to avoid starvation. "
+            "If no trade is beneficial, set both flows to 0.\n"
+            "If one side cannot meet its food requirement even when focusing on food, trading for food before upkeep is high priority.\n"
+            "Generous gifts (sending food or wealth without repayment) improve relations. Exploitative deals (one side clearly gains at the other's expense) harm relations.\n"
+            "Do not output explanations or code fences, only that JSON.\n"
+        )
+        # I keep this prompt short because I only need a concise negotiation snippet for the feasibility demo.
+        return prompt
+
+    def negotiate(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """I call LM Studio to improvise a dialogue and trade between East and West."""
+        if not self.enabled:
+            raise RuntimeError("LLMDecisionClient is disabled.")
+
+        prompt = self.compose_negotiation_prompt(state)
+        response = requests.post(
+            self.config.base_url,
+            json={
+                "model": self.config.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are simulating a calm negotiation between East and West.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": self.config.max_tokens,
+                "temperature": self.config.temperature,
+            },
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"].strip()
+        parsed = self._parse_response(text)
+
+        if parsed is None:
+            print("LLMDecisionClient: failed to parse negotiation JSON, defaulting to no trade.")
+            return {
+                "east_line": "Let's hold steady for now.",
+                "west_line": "Agreed, we can revisit later.",
+                "trade": {
+                    "food_from_east_to_west": 0,
+                    "wealth_from_west_to_east": 0,
+                    "reason": "fallback trade",
+                },
+            }
+
+        trade = parsed.get("trade") or {}
+
+        def _sanitise_flow(key: str) -> int:
+            value = trade.get(key, 0)
+            try:
+                delta = int(value)
+            except (ValueError, TypeError):
+                delta = 0
+            return max(-5, min(5, delta))
+
+        reason_text = str(trade.get("reason", "LLM proposed this trade.")).strip() or "LLM proposed this trade."
+        decision = {
+            "east_line": str(parsed.get("east_line", "")).strip() or "Let's hold steady for now.",
+            "west_line": str(parsed.get("west_line", "")).strip() or "Agreed, we can revisit later.",
+            "trade": {
+                "food_from_east_to_west": _sanitise_flow("food_from_east_to_west"),
+                "wealth_from_west_to_east": _sanitise_flow("wealth_from_west_to_east"),
+                "reason": reason_text,
+            },
+        }
+        # I keep the negotiation output structured so the chronicle can capture both dialogue and trade succinctly.
+        return decision
 
     def decide(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """I send the composed prompt to LM Studio and interpret the JSON reply."""
