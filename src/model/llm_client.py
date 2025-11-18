@@ -11,7 +11,13 @@ import requests
 
 # I mirror the allowed action list locally (the source lives in ``LeaderAgent``) so the prompt
 # instructions and validation stay consistent without creating circular imports.
-_ALLOWED_ACTIONS: tuple[str, ...] = ("gather", "consume", "wait")
+_ALLOWED_ACTIONS: tuple[str, ...] = (
+    "gather",
+    "consume",
+    "wait",
+    "support_neighbor",
+    "exploit_neighbor",
+)
 
 @dataclass
 class LLMConfig:
@@ -40,18 +46,27 @@ class LLMDecisionClient:
         wealth = state.get("wealth", "unknown")
         relation = state.get("relation_to_neighbor", "neutral")
         step = state.get("step", "unknown")
-        actions_hint = ", ".join(f'"{action}"' for action in _ALLOWED_ACTIONS)
-        # I embed the current readings and remind the model of the restricted action space.
+        neighbor_name = state.get("neighbor_name", "West")
+        neighbor_food = state.get("neighbor_food", "unknown")
+        neighbor_wealth = state.get("neighbor_wealth", "unknown")
+        actions_hint = (
+            '- "gather": collect more food for East.\n'
+            '- "consume": spend some stored food on current needs.\n'
+            '- "wait": keep everything unchanged this step.\n'
+            '- "support_neighbor": send a little food to West and improve relations.\n'
+            '- "exploit_neighbor": take a little food from West and worsen relations.\n'
+        )
+        # I embed the current readings, including the neighbour snapshot, so the LLM sees the tiny political choice.
         prompt = (
-            f"You govern the territory named {territory}.\n"
-            f"Current step: {step}.\n"
-            f"Resources -> food: {food}, wealth: {wealth}, relation to neighbor: {relation}.\n"
-            f"Choose exactly one action from: {actions_hint}.\n"
-            "You MUST respond with a single JSON object containing exactly the keys "
-            "\"action\", \"target\", and \"reason\".\n"
-            "The \"action\" must be one of the allowed actions above, \"target\" must be \"None\" "
-            "for this prototype, and \"reason\" must be a single short sentence.\n"
-            "Respond ONLY with that JSON object (no code fences, no commentary).\n"
+            f"You lead the territory {territory} (think of it as East) at step {step}.\n"
+            f"Your resources -> food: {food}, wealth: {wealth}.\n"
+            f"You also monitor the neighbour {neighbor_name} (West) with food {neighbor_food} and wealth {neighbor_wealth}.\n"
+            f"Current relationship to the neighbour: {relation}.\n"
+            "Choose exactly one of these actions:\n"
+            f"{actions_hint}"
+            "Respond with ONE JSON object like "
+            '{"action": <allowed_action>, "target": "None", "reason": <short sentence>}.\n'
+            "Do not output explanations or code fences, only that JSON.\n"
         )
         # I make the JSON instructions painfully explicit so the Week 11 feasibility demo stays reliable.
         return prompt

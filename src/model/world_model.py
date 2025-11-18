@@ -1,5 +1,5 @@
-"""I hold the single-territory Mesa ``WorldModel`` used in the CMP400 feasibility demo where
-one ``LeaderAgent`` (optionally LLM-driven) makes decisions that I log to a chronicle."""
+"""I now model the leader's territory (East) plus a simple neighbour (West) so the LLM can pick
+between supportive or exploitative political actions while I still log everything for the demo."""
 
 from __future__ import annotations
 
@@ -26,8 +26,9 @@ class WorldModel(mesa.Model):
         self.chronicle: List[Dict[str, Any]] = []
 
         # I document the initial territory stats so the feasibility demo stays simple to explain.
-        # I start with a single East territory to keep the world small and controlled.
-        territory = TerritoryState(name="East", food=initial_food, wealth=5)
+        # I now set up East (my leader) and West (a neighbour) so the LLM has basic political options.
+        self.east = TerritoryState(name="East", food=initial_food, wealth=5)
+        self.west = TerritoryState(name="West", food=max(1, initial_food - 2), wealth=4)
 
         # I enable the HTTP LLM client only when requested so rules remain the default path.
         llm_client: LLMDecisionClient | None = None
@@ -35,15 +36,15 @@ class WorldModel(mesa.Model):
             llm_client = LLMDecisionClient(config=LLMConfig(), enabled=True)
 
         # I register the sole leader agent with Mesa's ``AgentSet`` so upgrading to multi-agent later is easy.
-        self.leader = LeaderAgent(model=self, territory=territory, llm_client=llm_client)
+        self.leader = LeaderAgent(model=self, territory=self.east, neighbor=self.west, llm_client=llm_client)
         self.agents.add(self.leader)
 
     def log_step(
         self,
         agent: LeaderAgent,
         decision: Dict[str, Any],
-        state_before: Dict[str, int],
-        state_after: Dict[str, int],
+        state_before: Dict[str, Any],
+        state_after: Dict[str, Any],
         llm_used: bool,
     ) -> None:
         """I capture each decision in a serialisable dict for later inspection."""
@@ -60,6 +61,12 @@ class WorldModel(mesa.Model):
             "wealth_before": state_before["wealth"],
             "wealth_after": state_after["wealth"],
             "llm_used": llm_used,
+            "relation_before": state_before.get("relation"),
+            "relation_after": state_after.get("relation"),
+            "neighbor_food_before": state_before.get("neighbor_food"),
+            "neighbor_food_after": state_after.get("neighbor_food"),
+            "neighbor_wealth_before": state_before.get("neighbor_wealth"),
+            "neighbor_wealth_after": state_after.get("neighbor_wealth"),
         }
         # I keep this structure stable now so I can extend it later for councils without rewriting the analysis tools.
         # I append the record to the running chronicle so I can later show the structured trace.
@@ -67,9 +74,18 @@ class WorldModel(mesa.Model):
         # I echo the decision for quick debugging while the sim runs.
         llm_label = "yes" if llm_used else "no"
         reason_text = entry["reason"] or "no reason provided"
+        relation_note = ""
+        if entry["relation_before"] is not None:
+            relation_note = f", relation {entry['relation_before']}->{entry['relation_after']}"
+        neighbor_note = ""
+        if entry["neighbor_food_before"] is not None:
+            neighbor_note = (
+                f"; neighbor food {entry['neighbor_food_before']}->{entry['neighbor_food_after']}"
+            )
         print(
             f"Step {entry['step']}: {entry['territory']} -> {entry['action']} "
-            f"(food {entry['food_before']}→{entry['food_after']}; LLM: {llm_label}; reason: {reason_text})"
+            f"(food {entry['food_before']}->{entry['food_after']}{neighbor_note}{relation_note}; "
+            f"LLM: {llm_label}; reason: {reason_text})"
         )
 
     def step(self) -> None:
