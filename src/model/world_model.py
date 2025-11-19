@@ -35,6 +35,9 @@ class WorldModel(mesa.Model):
             population=100,
             food_yield=1.5,
             wealth_yield=0.5,
+            wood=0.0,
+            wood_yield=1.0,
+            infrastructure_level=0,
         )
         self.west = TerritoryState(
             name="West",
@@ -44,7 +47,17 @@ class WorldModel(mesa.Model):
             population=100,
             food_yield=0.5,
             wealth_yield=1.5,
+            wood=0.0,
+            wood_yield=1.0,
+            infrastructure_level=0,
         )
+        self.seasons = ["spring", "summer", "autumn", "winter"]
+        self.season_multipliers = {
+            "spring": 1.0,
+            "summer": 1.2,
+            "autumn": 0.8,
+            "winter": 0.4,
+        }
         initial_label = self._relation_label(0)
         self.east.relation_score = 0
         self.west.relation_score = 0
@@ -63,6 +76,108 @@ class WorldModel(mesa.Model):
         self.current_step_log: Dict[str, Dict[str, Any]] = {}
         self.agents.add(self.leader_east)
         self.agents.add(self.leader_west)
+
+    def current_season(self) -> str:
+        """I expose the current season derived from the simulation step counter."""
+        if not self.seasons:
+            return "unknown"
+        if self.steps <= 0:
+            return self.seasons[0]
+        idx = (self.steps - 1) % len(self.seasons)
+        return self.seasons[idx]
+
+    def next_season(self) -> str:
+        """I expose the upcoming season so the LLM can plan ahead."""
+        if not self.seasons:
+            return "unknown"
+        if self.steps < 0:
+            return self.seasons[0]
+        idx = self.steps % len(self.seasons)
+        return self.seasons[idx]
+
+    def get_config_summary(self) -> dict:
+        """I expose a snapshot of the core knobs so I can serialise them elsewhere."""
+        return {
+            "territories": {
+                "East": {
+                    "initial_food": self.east.food,
+                    "initial_wealth": self.east.wealth,
+                    "initial_population": self.east.population,
+                    "food_yield": self.east.food_yield,
+                    "wealth_yield": self.east.wealth_yield,
+                    "wood_yield": self.east.wood_yield,
+                    "infrastructure_level": self.east.infrastructure_level,
+                },
+                "West": {
+                    "initial_food": self.west.food,
+                    "initial_wealth": self.west.wealth,
+                    "initial_population": self.west.population,
+                    "food_yield": self.west.food_yield,
+                    "wealth_yield": self.west.wealth_yield,
+                    "wood_yield": self.west.wood_yield,
+                    "infrastructure_level": self.west.infrastructure_level,
+                },
+            },
+            "actions": [
+                "focus_food",
+                "focus_wealth",
+                "balanced",
+                "wait",
+                "build_infrastructure",
+            ],
+            "wages": {
+                "wage_per_worker": 0.2,
+            },
+            "seasons": {
+                "order": list(self.seasons),
+                "multipliers": dict(self.season_multipliers),
+            },
+            "infrastructure": {
+                "wood_cost": 5.0,
+                "wealth_cost": 3.0,
+                "yield_bonus_per_level": 0.1,
+            },
+        }
+
+    def save_config_summary(self, path: str) -> None:
+        """I persist a human-readable description of the configuration to ``path``."""
+        cfg = self.get_config_summary()
+        lines: list[str] = []
+        lines.append("Simulation configuration summary")
+        lines.append("================================")
+        lines.append("")
+        lines.append("Territories:")
+        for name, tcfg in cfg["territories"].items():
+            lines.append(f"  {name}:")
+            lines.append(f"    initial_food: {tcfg['initial_food']}")
+            lines.append(f"    initial_wealth: {tcfg['initial_wealth']}")
+            lines.append(f"    initial_population: {tcfg['initial_population']}")
+            lines.append(f"    food_yield: {tcfg['food_yield']}")
+            lines.append(f"    wealth_yield: {tcfg['wealth_yield']}")
+            lines.append(f"    wood_yield: {tcfg['wood_yield']}")
+            lines.append(f"    infrastructure_level: {tcfg['infrastructure_level']}")
+            lines.append("")
+        lines.append("Actions:")
+        for action in cfg["actions"]:
+            lines.append(f"  - {action}")
+        lines.append("")
+        lines.append("Wages:")
+        lines.append(f"  wage_per_worker: {cfg['wages']['wage_per_worker']}")
+        lines.append("")
+        lines.append("Seasons:")
+        lines.append(f"  order: {', '.join(cfg['seasons']['order'])}")
+        lines.append("  multipliers:")
+        for season, mult in cfg["seasons"]["multipliers"].items():
+            lines.append(f"    {season}: {mult}")
+        lines.append("")
+        lines.append("Infrastructure:")
+        lines.append(f"  wood_cost: {cfg['infrastructure']['wood_cost']}")
+        lines.append(f"  wealth_cost: {cfg['infrastructure']['wealth_cost']}")
+        lines.append(f"  yield_bonus_per_level: {cfg['infrastructure']['yield_bonus_per_level']}")
+        lines.append("")
+        text = "\n".join(lines)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
 
     def record_decision(
         self,
@@ -90,6 +205,16 @@ class WorldModel(mesa.Model):
         """I buffer the upkeep outcome per territory for the grouped summary."""
         entry = self.current_step_log.setdefault(territory_name, {})
         entry["upkeep"] = {"before": dict(before), "after": dict(after)}
+
+    def record_wages(
+        self,
+        territory_name: str,
+        before: Dict[str, Any],
+        after: Dict[str, Any],
+    ) -> None:
+        """I capture wage payments so the summary can reveal morale issues."""
+        entry = self.current_step_log.setdefault(territory_name, {})
+        entry["wages"] = {"before": dict(before), "after": dict(after)}
 
     def log_upkeep(
         self,
@@ -120,6 +245,10 @@ class WorldModel(mesa.Model):
             "food_after": after.get("food"),
             "wealth_before": before.get("wealth"),
             "wealth_after": after.get("wealth"),
+            "wood_before": before.get("wood"),
+            "wood_after": after.get("wood"),
+            "infrastructure_before": before.get("infrastructure_level"),
+            "infrastructure_after": after.get("infrastructure_level"),
             "population_before": before.get("population"),
             "population_after": after.get("population"),
             "llm_used": decision.get("used_llm"),
@@ -131,6 +260,8 @@ class WorldModel(mesa.Model):
             "neighbor_wealth_after": after.get("neighbor_wealth"),
             "neighbor_population_before": before.get("neighbor_population"),
             "neighbor_population_after": after.get("neighbor_population"),
+            "neighbor_wood_before": before.get("neighbor_wood"),
+            "neighbor_wood_after": after.get("neighbor_wood"),
         }
         self.chronicle.append(entry)
 
@@ -143,17 +274,34 @@ class WorldModel(mesa.Model):
                 "food_after": east_after["food"],
                 "population_before": east_before["population"],
                 "population_after": east_after["population"],
+                "wealth_before": east_before.get("wealth"),
+                "wealth_after": east_after.get("wealth"),
+                "wood_before": east_before.get("wood"),
+                "wood_after": east_after.get("wood"),
+                "infrastructure_before": east_before.get("infrastructure_level"),
+                "infrastructure_after": east_after.get("infrastructure_level"),
             },
             "west": {
                 "food_before": west_before["food"],
                 "food_after": west_after["food"],
                 "population_before": west_before["population"],
                 "population_after": west_after["population"],
+                "wealth_before": west_before.get("wealth"),
+                "wealth_after": west_after.get("wealth"),
+                "wood_before": west_before.get("wood"),
+                "wood_after": west_after.get("wood"),
+                "infrastructure_before": west_before.get("infrastructure_level"),
+                "infrastructure_after": west_after.get("infrastructure_level"),
             },
         }
         self.chronicle.append(entry)
 
     def _print_step_summary(self) -> None:
+        def _fmt(value: Any) -> Any:
+            if isinstance(value, (int, float)):
+                return f"{value:.2f}"
+            return value
+
         for territory in ["West", "East"]:
             info = self.current_step_log.get(territory, {})
             decision = info.get("decision", {})
@@ -165,7 +313,10 @@ class WorldModel(mesa.Model):
                 action = decision.get("decision", {}).get("action")
                 print(
                     f"  {territory}: action={action} (LLM: {used_llm})\n"
-                    f"    Resources: food {before.get('food')}->{after.get('food')}, wealth {before.get('wealth')}->{after.get('wealth')}\n"
+                    f"    Resources: food {before.get('food')}->{after.get('food')}, "
+                    f"wealth {before.get('wealth')}->{after.get('wealth')}, "
+                    f"wood {before.get('wood')}->{after.get('wood')}, "
+                    f"infra {after.get('infrastructure_level')}\n"
                     f"    Pop: {before.get('population')}\n"
                     f"    Reason: {reason}"
                 )
@@ -186,10 +337,24 @@ class WorldModel(mesa.Model):
                 f"wealth West->East {entry['trade']['wealth_from_west_to_east']}\n"
                 f"      East after trade: food {east_before['food']}->{east_after['food']}, "
                 f"wealth {east_before['wealth']}->{east_after['wealth']}\n"
-                f"      West after trade: food {west_before['food']}->{west_after['food']}, "
-                f"wealth {west_before['wealth']}->{west_after['wealth']}\n"
-                f"      Relation now: {entry.get('relation_label')}"
-            )
+                    f"      West after trade: food {west_before['food']}->{west_after['food']}, "
+                    f"wealth {west_before['wealth']}->{west_after['wealth']}\n"
+                    f"      Relation now: {entry.get('relation_label')}"
+                )
+
+        wage_lines: list[str] = []
+        for territory in ["West", "East"]:
+            wages = self.current_step_log.get(territory, {}).get("wages", {})
+            if wages:
+                before_w = wages.get("before", {})
+                after_w = wages.get("after", {})
+                wage_lines.append(
+                    f"  Wages {territory}: wealth {before_w.get('wealth')}->{after_w.get('wealth')}, "
+                    f"mult {_fmt(before_w.get('multiplier'))}->{_fmt(after_w.get('multiplier'))}, "
+                    f"on_strike={after_w.get('on_strike')}, unpaid_steps={after_w.get('unpaid_steps')}"
+                )
+        if wage_lines:
+            print("\n".join(wage_lines))
 
         for idx, territory in enumerate(["West", "East"]):
             info = self.current_step_log.get(territory, {})
@@ -201,9 +366,37 @@ class WorldModel(mesa.Model):
                 prefix = "\n" if idx == 0 else ""
                 print(
                     f"{prefix}  {territory} upkeep: food {before_u.get('food')}->{after_u.get('food')}, "
+                    f"wealth {before_u.get('wealth')}->{after_u.get('wealth')}, "
+                    f"wood {before_u.get('wood')}->{after_u.get('wood')}, "
+                    f"infra {before_u.get('infrastructure_level')}->{after_u.get('infrastructure_level')}, "
                     f"pop {before_u.get('population')}->{after_u.get('population')}, required_food {req}"
                 )
         print("\n" + "-" * 60 + "\n")
+
+    def apply_wages(self, territory: TerritoryState) -> None:
+        """I deduct wages and model morale strikes when wealth runs dry."""
+        workers = max(0, territory.population // 100)
+        wage_per_worker = 0.2
+        wage_bill = workers * wage_per_worker
+        if wage_bill <= 0:
+            territory.effective_work_multiplier = 1.0
+            territory.unpaid_steps = 0
+            territory.on_strike = False
+            return
+
+        if territory.wealth >= wage_bill:
+            territory.wealth -= wage_bill
+            territory.effective_work_multiplier = 1.0
+            territory.unpaid_steps = 0
+            territory.on_strike = False
+            return
+
+        territory.unpaid_steps += 1
+        territory.wealth = 0.0
+        if territory.unpaid_steps >= 2:
+            territory.on_strike = True
+        morale = 0.25 if territory.on_strike else 0.7
+        territory.effective_work_multiplier = morale
 
     def _apply_population_dynamics(self, territory: TerritoryState) -> None:
         """I now focus this on upkeep: food consumption, starvation, and simple growth."""
@@ -268,8 +461,16 @@ class WorldModel(mesa.Model):
         food_flow = _sanitise_flow("food_from_east_to_west")
         wealth_flow = _sanitise_flow("wealth_from_west_to_east")
 
-        east_before = {"food": self.east.food, "wealth": self.east.wealth}
-        west_before = {"food": self.west.food, "wealth": self.west.wealth}
+        east_before = {
+            "food": self.east.food,
+            "wealth": self.east.wealth,
+            "population": self.east.population,
+        }
+        west_before = {
+            "food": self.west.food,
+            "wealth": self.west.wealth,
+            "population": self.west.population,
+        }
 
         if food_flow > 0:
             food_flow = min(food_flow, int(self.east.food))
@@ -302,15 +503,32 @@ class WorldModel(mesa.Model):
         self.east.wealth = max(0.0, self.east.wealth)
         self.west.wealth = max(0.0, self.west.wealth)
 
-        east_after = {"food": self.east.food, "wealth": self.east.wealth}
-        west_after = {"food": self.west.food, "wealth": self.west.wealth}
+        east_after = {
+            "food": self.east.food,
+            "wealth": self.east.wealth,
+            "population": self.east.population,
+        }
+        west_after = {
+            "food": self.west.food,
+            "wealth": self.west.wealth,
+            "population": self.west.population,
+        }
 
         units_food = abs(food_flow)
         eps = 1e-6
         trade_type = "no_trade"
         effective_price = None
+        east_value = (east_after["food"] - east_before["food"]) + (east_after["wealth"] - east_before["wealth"])
+        west_value = (west_after["food"] - west_before["food"]) + (west_after["wealth"] - west_before["wealth"])
+        gift_classified = False
+        if east_value < 0 and west_value > 0 and wealth_flow <= 0:
+            trade_type = "gift_from_east"
+            gift_classified = True
+        elif west_value < 0 and east_value > 0 and wealth_flow >= 0:
+            trade_type = "gift_from_west"
+            gift_classified = True
 
-        if units_food > 0:
+        if not gift_classified and units_food > 0:
             if food_flow > 0:
                 receiver_before = west_before
                 receiver_required = max(1, int(west_before.get("population", 0)) // 100)
@@ -337,18 +555,21 @@ class WorldModel(mesa.Model):
                 if FAIR_LOW <= effective_price <= FAIR_HIGH:
                     trade_type = "balanced_trade"
                 else:
+                    victim = None
+                    if east_value < 0 and west_value >= 0:
+                        victim = "east"
+                    elif west_value < 0 and east_value >= 0:
+                        victim = "west"
+                    elif east_value < 0 and west_value < 0:
+                        victim = "east" if abs(east_value) >= abs(west_value) else "west"
+                    else:
+                        victim = "west" if food_flow > 0 else "east"
                     if effective_price >= STRONG_EXPLOIT:
                         trade_type = (
-                            "strongly_exploitative_for_west"
-                            if food_flow > 0
-                            else "strongly_exploitative_for_east"
+                            f"strongly_exploitative_for_{victim}"
                         )
                     else:
-                        trade_type = (
-                            "mildly_exploitative_for_west"
-                            if food_flow > 0
-                            else "mildly_exploitative_for_east"
-                        )
+                        trade_type = f"mildly_exploitative_for_{victim}"
 
         score = self.east.relation_score
         if trade_type in ("gift_from_east", "gift_from_west"):
@@ -411,14 +632,58 @@ class WorldModel(mesa.Model):
         self.agents.shuffle_do("step")
         if self.llm_client is not None and self.llm_client.enabled:
             self.run_negotiation()
-        east_before = {"food": self.east.food, "population": self.east.population}
-        west_before = {"food": self.west.food, "population": self.west.population}
+        # I settle wages after production so the next turn's work multiplier reflects morale.
+        for name, territory in (("East", self.east), ("West", self.west)):
+            before_wages = {
+                "wealth": territory.wealth,
+                "multiplier": territory.effective_work_multiplier,
+                "on_strike": territory.on_strike,
+                "unpaid_steps": territory.unpaid_steps,
+            }
+            self.apply_wages(territory)
+            after_wages = {
+                "wealth": territory.wealth,
+                "multiplier": territory.effective_work_multiplier,
+                "on_strike": territory.on_strike,
+                "unpaid_steps": territory.unpaid_steps,
+            }
+            self.record_wages(name, before_wages, after_wages)
+        east_before = {
+            "food": self.east.food,
+            "population": self.east.population,
+            "wealth": self.east.wealth,
+            "wood": self.east.wood,
+            "infrastructure_level": self.east.infrastructure_level,
+        }
+        west_before = {
+            "food": self.west.food,
+            "population": self.west.population,
+            "wealth": self.west.wealth,
+            "wood": self.west.wood,
+            "infrastructure_level": self.west.infrastructure_level,
+        }
         self._apply_population_dynamics(self.east)
         self._apply_population_dynamics(self.west)
-        east_after = {"food": self.east.food, "population": self.east.population}
-        west_after = {"food": self.west.food, "population": self.west.population}
+        east_after = {
+            "food": self.east.food,
+            "population": self.east.population,
+            "wealth": self.east.wealth,
+            "wood": self.east.wood,
+            "infrastructure_level": self.east.infrastructure_level,
+        }
+        west_after = {
+            "food": self.west.food,
+            "population": self.west.population,
+            "wealth": self.west.wealth,
+            "wood": self.west.wood,
+            "infrastructure_level": self.west.infrastructure_level,
+        }
         self.log_upkeep(east_before, east_after, west_before, west_after)
         self._print_step_summary()
+
+    def all_territories_dead(self) -> bool:
+        """I report whether every territory has collapsed so callers can stop the run early."""
+        return self.east.population <= 0 and self.west.population <= 0
 
     def save_chronicle(self, path: Path) -> None:
         """I persist the chronicle as JSON to ``path`` so I can analyze runs later."""

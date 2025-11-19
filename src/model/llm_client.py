@@ -15,6 +15,7 @@ _ALLOWED_ACTIONS: tuple[str, ...] = (
     "focus_food",
     "focus_wealth",
     "balanced",
+    "build_infrastructure",
     "wait",
 )
 
@@ -43,6 +44,7 @@ class LLMDecisionClient:
         territory = state.get("territory") or state.get("name", "Unknown")
         food = state.get("food", "unknown")
         wealth = state.get("wealth", "unknown")
+        wood = state.get("wood", "unknown")
         population = state.get("population", "unknown")
         required_food = state.get("required_food", "unknown")
         relation = state.get("relation_to_neighbor", "neutral")
@@ -51,39 +53,54 @@ class LLMDecisionClient:
         neighbor_food = state.get("neighbor_food", "unknown")
         neighbor_wealth = state.get("neighbor_wealth", "unknown")
         neighbor_population = state.get("neighbor_population", "unknown")
+        neighbor_wood = state.get("neighbor_wood", "unknown")
         max_food_ff = state.get("max_food_if_focus_food", "unknown")
         max_food_fw = state.get("max_food_if_focus_wealth", "unknown")
         max_wealth_ff = state.get("max_wealth_if_focus_food", "unknown")
         max_wealth_fw = state.get("max_wealth_if_focus_wealth", "unknown")
         can_hit_ff = state.get("can_meet_quota_if_focus_food", "unknown")
         can_hit_fw = state.get("can_meet_quota_if_focus_wealth", "unknown")
-        # I give the LLM a minimal but clear action menu so it contrasts food vs wealth priorities.
+        food_yield = state.get("food_yield", "unknown")
+        wealth_yield = state.get("wealth_yield", "unknown")
+        wood_yield = state.get("wood_yield", "unknown")
+        infra = state.get("infrastructure_level", "unknown")
+        effective_multiplier = state.get("effective_work_multiplier", "unknown")
+        current_season = state.get("current_season", "unknown")
+        next_season = state.get("next_season", "unknown")
+        # I give the LLM a clear action menu so it can reason about production vs. investment.
         actions_hint = (
-            '- "focus_food": allocate roughly 75% of work points to food production (rest to wealth).\n'
-            '- "focus_wealth": allocate roughly 75% of work points to wealth production (rest to food).\n'
-            '- "balanced": split work points about evenly between food and wealth.\n'
-            '- "wait": allocate zero work points; resources will not grow this step.\n'
+            '- "focus_food": ≈70% food, 20% wealth, 10% wood (best for averting starvation right now).\n'
+            '- "focus_wealth": ≈70% wealth, 20% food, 10% wood (earn trade resources and pay wages).\n'
+            '- "balanced": split work across food/wealth/wood for steady growth.\n'
+            '- "build_infrastructure": spend 5 wood + 3 wealth (no production this step) to raise infrastructure_level by 1, boosting all future yields by ~10%.\n'
+            '- "wait": allocate zero work points; nothing grows.\n'
         )
         # I embed the current readings, including the neighbour snapshot, so the LLM sees the small economic contrast.
         prompt = (
-            f"You currently lead {territory} at step {step}.\n"
+            f"You currently lead {territory} at step {step}. Current season: {current_season}; next season: {next_season} "
+            "(summer boosts food/wood yields, winter suppresses them).\n"
             f"Population: {population} people needing about {required_food} food this step to avoid starvation.\n"
-            f"Work points available this step: {state.get('work_points', 'unknown')} (100 population ≈ 1 point).\n"
-            f"Your resources -> food: {food}, wealth: {wealth}.\n"
+            f"Work points available: {state.get('work_points', 'unknown')} = floor(population/100) * effective_work_multiplier ({effective_multiplier}).\n"
+            "Falling short on wealth causes unpaid wages and reduces the multiplier next step, so morale (and wealth reserves) matter.\n"
+            f"Your resources -> food: {food}, wealth: {wealth}, wood: {wood}, infrastructure level: {infra} "
+            "(each infrastructure level boosts all yields by ~10%).\n"
+            f"Base yields per work point -> food: {food_yield}, wealth: {wealth_yield}, wood: {wood_yield}; "
+            "food and wood yields also scale with the current season multiplier.\n"
             f"The neighbouring territory {neighbor_name} has food {neighbor_food}, wealth {neighbor_wealth}, "
-            f"population {neighbor_population}, and the relationship is {relation}.\n"
-            f"Current relationship score: {state.get('relation_score', 'unknown')}.\n"
-            "Production depends entirely on work allocation: 100 population = 1 work point. "
-            "There is no automatic production, so if you wait you gain nothing.\n"
+            f"wood {neighbor_wood}, population {neighbor_population}, and the relationship is {relation} "
+            f"(score {state.get('relation_score', 'unknown')}).\n"
+            "Wood gathers like other resources and is required (with wealth) to build infrastructure. "
+            "Infrastructure upgrades permanently increase all yields, so balancing investment against survival is crucial.\n"
             f"If you focus on food you can reach food ≈ {max_food_ff} and wealth ≈ {max_wealth_ff} "
             f"(meets quota? {can_hit_ff}). If you focus on wealth you can reach food ≈ {max_food_fw} "
             f"and wealth ≈ {max_wealth_fw} (meets quota? {can_hit_fw}).\n"
+            "Your strategic goal is to keep the civilisation alive, grow population, maintain dignity and autonomy, "
+            "and balance food, wealth, and wood. Avoid starvation in the short term, but also maintain enough wealth to pay wages "
+            "and invest in infrastructure when you can afford it.\n"
             "Choose exactly one of these actions:\n"
             f"{actions_hint}"
             "Respond with ONE JSON object like "
             '{"action": <allowed_action>, "target": "None", "reason": <short sentence>}.\n'
-            "Avoiding population loss is the top priority: if focus_food can meet the quota and food is near the requirement, prioritise focus_food. "
-            "If even focus_food cannot reach the quota, consider focus_wealth to earn trade resources.\n"
             "Do not output explanations or code fences, only that JSON.\n"
         )
         # I encode the survival-first goal in the prompt so the LLM keeps the population alive for the demo narrative.

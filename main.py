@@ -18,7 +18,7 @@ class RunConfig:
     """I centralise the key knobs (steps, seed, initial food, LLM flag) so future multi-agent demos
     stay consistent."""
 
-    steps: int = 10
+    steps: int = 25
     seed: int = 42
     initial_food: int = 3
     use_llm: bool = True
@@ -29,7 +29,7 @@ class RunConfig:
 
 
 def run_demo(
-    steps: int = 10,
+    steps: int = 25,
     seed: int = 42,
     initial_food: Optional[int] = None,
     save_log: bool = True,
@@ -61,10 +61,18 @@ def run_demo(
         initial_food=config.initial_food,
         use_llm=config.use_llm,
     )
+    # I snapshot the current configuration so I can review the key knobs alongside each run.
+    logs_dir = Path("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    config_path = logs_dir / "config_summary.txt"
+    model.save_config_summary(str(config_path))
 
     for _ in range(config.steps):
         # I step the Mesa model manually because I want to print each tick in real time.
         model.step()
+        if model.all_territories_dead():
+            print(f"All territories have collapsed by step {model.steps}. Ending simulation early.")
+            break
 
     if save_log:
         # I persist the chronicle to share the structured trace in the feasibility report.
