@@ -77,6 +77,15 @@ def parse_json_response(raw_text: str) -> Dict[str, Any] | None:
     return last_result
 
 
+def extract_action_hint(text: str, allowed_actions: tuple[str, ...]) -> Dict[str, Any] | None:
+    """Heuristic salvage when JSON is missing but an action hint exists."""
+    lower = (text or "").lower()
+    for action in allowed_actions:
+        if action in lower:
+            return {"action": action}
+    return None
+
+
 def sanitise_allocations(raw: Any, allowed_actions: tuple[str, ...]) -> Dict[str, float]:
     """Filter and normalise allocation dictionary."""
     allocations: Dict[str, float] = {}

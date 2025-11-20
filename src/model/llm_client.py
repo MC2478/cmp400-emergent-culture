@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 import requests
 
 import config
-from src.model.parsers import parse_json_response, sanitise_allocations
+from src.model.parsers import extract_action_hint, parse_json_response, sanitise_allocations
 from src.model.prompt_builder import compose_negotiation_context, compose_prompt
 
 log = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class LLMDecisionClient:
         context = compose_negotiation_context(state)
         dialogue_prompt = f"""{context}
 
-Dialogue task: produce an alternating conversation (East speaks first, then West) with at least one full exchange and at most three exchanges per side. Each line must follow the numbers above and the speakers must strictly alternate (East, West, East, West, ...). Respond ONLY with JSON like {{"dialogue": [{{"speaker": "East", "line": "..."}}...]}}. Do not include trade information yet or any extra text.
+Dialogue task: produce an alternating conversation (East speaks first, then West) with at least one full exchange and at most three exchanges per side. Each line must follow the numbers above and the speakers must strictly alternate (East, West, East, West, ...). Respond ONLY with JSON like {{"dialogue": [{{"speaker": "East", "line": "..."}}...]}}. Do not include trade information yet or any extra text. It is acceptable to end with no deal (e.g., a polite \"hold steady\") if no agreement is reached.
 """
         dialogue_data = self._negotiate_request(dialogue_prompt, max(512, self.config.max_tokens))
         if dialogue_data is None:
@@ -182,7 +182,12 @@ Settlement task: determine the final deal reached in the transcript and respond 
   "east_line": "...",
   "west_line": "..."
 }}.
-The trade values must match the final proposal, stay within each side's resources (positive food means East ships food to West; positive wealth means West sends wealth to East), and the summary lines should reflect each leader's closing statement.
+Trade rules:
+  - If no deal is reached, return zeros for both flows.
+  - Flows must match the final proposal and stay within each side's resources (positive food means East ships food to West; positive wealth means West sends wealth to East).
+  - Do not propose aid that would leave the sender below roughly 1.5x their immediate food requirement.
+  - If one side is more food-insecure, food should flow to them unless the dialogue explicitly refuses; avoid gifts from the poorer side to the richer side unless the dialogue shows tribute/exploitation.
+  - Summary lines should reflect each leader's closing statement.
 """
         trade_data = self._negotiate_request(trade_prompt, max(384, self.config.max_tokens))
         if trade_data is None:
@@ -223,40 +228,57 @@ The trade values must match the final proposal, stay within each side's resource
         if not self.enabled:
             raise RuntimeError("LLMDecisionClient is disabled.")
 
-        prompt = compose_prompt(state)
-        try:
-            response = requests.post(
-                self.config.base_url,
-                json={
-                    "model": self.config.model,
-                    "messages": [
-                        {"role": "system", "content": "You are a careful decision-making ruler agent."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": self.config.max_tokens,
-                    "temperature": self.config.temperature,
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            data = response.json()
-            text = data["choices"][0]["message"]["content"].strip()
-        except requests.RequestException as exc:
-            log.warning("LLM decision request failed (%s); using fallback policy.", exc)
+        def _request(extra_prompt: str | None = None) -> str | None:
+            prompt = compose_prompt(state)
+            if extra_prompt:
+                prompt = f"{prompt}\n\nPrevious reply was invalid. {extra_prompt.strip()}"
+            try:
+                response = requests.post(
+                    self.config.base_url,
+                    json={
+                        "model": self.config.model,
+                        "messages": [
+                            {"role": "system", "content": "You are a careful decision-making ruler agent."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": self.config.max_tokens,
+                        "temperature": self.config.temperature,
+                    },
+                    timeout=10,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"].strip()
+            except requests.RequestException as exc:
+                log.warning("LLM decision request failed (%s); using fallback policy.", exc)
+                return None
+            except Exception as exc:  # pragma: no cover - defensive
+                log.warning("LLM decision parsing failed (%s); using fallback policy.", exc)
+                return None
+
+        text = _request()
+        if text is None:
             return self._fallback_decision("request failed")
-        except Exception as exc:  # pragma: no cover - defensive
-            log.warning("LLM decision parsing failed (%s); using fallback policy.", exc)
-            return self._fallback_decision("response parsing failed")
 
         parsed = parse_json_response(text)
         if parsed is None:
-            log.warning("LLM decision JSON invalid; using fallback policy.")
-            return self._fallback_decision("invalid JSON")
+            # One retry before heuristic; include a clear reminder.
+            text_retry = _request("Respond with JSON only in the specified schema.")
+            if text_retry:
+                parsed = parse_json_response(text_retry)
+        if parsed is None:
+            # Salvage based on a hinted action if present.
+            action_hint = extract_action_hint(text, _WORK_ACTIONS + ("build_infrastructure", "wait"))
+            if action_hint is None:
+                log.warning("LLM decision JSON invalid; using fallback policy.")
+                return self._fallback_decision("invalid JSON")
+            parsed = action_hint
 
         allocations = sanitise_allocations(parsed.get("allocations", {}), _WORK_ACTIONS)
         build_flag = bool(parsed.get("build_infrastructure"))
         reason_value = str(parsed.get("reason", "")).strip() or "No reason provided by model."
         next_prompt = str(parsed.get("next_prompt", "")).strip() or "Maintain flexibility and reassess."
+        trait_adjustment = str(parsed.get("trait_adjustment", "")).strip() or "no change"
 
         action_raw = str(parsed.get("action", "")).strip().lower()
         legacy_action = action_raw if action_raw in _WORK_ACTIONS + ("build_infrastructure", "wait") else None
@@ -271,6 +293,7 @@ The trade values must match the final proposal, stay within each side's resource
             "legacy_action": legacy_action,
             "reason": reason_value,
             "next_prompt": next_prompt,
+            "trait_adjustment": trait_adjustment,
         }
 
     def _fallback_negotiation(self) -> Dict[str, Any]:
@@ -297,4 +320,5 @@ The trade values must match the final proposal, stay within each side's resource
             "legacy_action": None,
             "reason": f"LLM decision fallback: {reason}",
             "next_prompt": "Rebuild buffers and gather wood.",
+            "trait_adjustment": "no change",
         }

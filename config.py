@@ -67,3 +67,22 @@ SEASON_MULTIPLIERS = {
     "autumn": 0.8,
     "winter": 0.4,
 }
+
+# Trait and personality tuning
+TRAIT_MAX_ACTIVE: int = 2
+TRAIT_ADAPTATION_ALPHA: float = 0.7
+TRAIT_COOLDOWN_STEPS: int = 10
+TRAIT_CHANGE_PRESSURE_THRESHOLD: int = 3
+TRAIT_SOFT_ADJUST_DELTA: float = 0.1
+TRAIT_NEUTRAL_VALUE: float = 0.5
+
+# Environment generation bounds (seed-driven, within modest caps)
+ENV_TOTAL_FOOD_YIELD_MIN: float = 2.5
+ENV_TOTAL_FOOD_YIELD_MAX: float = 3.5
+ENV_TOTAL_WEALTH_YIELD_MIN: float = 1.7
+ENV_TOTAL_WEALTH_YIELD_MAX: float = 2.3
+ENV_TOTAL_WOOD_YIELD_MIN: float = 1.7
+ENV_TOTAL_WOOD_YIELD_MAX: float = 2.3
+ENV_STARTING_FOOD_RANGE: tuple[float, float] = (2.0, 4.5)
+ENV_STARTING_WEALTH_RANGE: tuple[float, float] = (4.0, 6.5)
+ENV_STARTING_WOOD_RANGE: tuple[float, float] = (0.0, 2.0)

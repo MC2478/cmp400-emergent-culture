@@ -6,17 +6,18 @@ from typing import Any, Dict
 
 import config
 from src.model.llm_client import summarise_memory_for_prompt
+from src.model.traits import neutral_personality_vector
 
 
-def relation_label(score: int) -> str:
+def relation_label(score: float) -> str:
     """Map relation score to a label."""
-    if score <= -2:
+    if score <= -1.5:
         return "hostile"
-    if score == -1:
+    if score <= -0.5:
         return "strained"
-    if score == 0:
+    if -0.5 < score < 0.5:
         return "neutral"
-    if score == 1:
+    if 0.5 <= score < 1.5:
         return "cordial"
     return "allied"
 
@@ -28,6 +29,48 @@ def _sanitise_flow(trade: Dict[str, Any], key: str) -> int:
     except (ValueError, TypeError):
         delta = 0
     return max(-5, min(5, delta))
+
+
+def _safe_vec(vec: Dict[str, float] | None) -> Dict[str, float]:
+    base = neutral_personality_vector()
+    if not isinstance(vec, dict):
+        return base
+    for key, value in vec.items():
+        if key in base:
+            try:
+                base[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+    return base
+
+
+def _relation_delta_with_personality(delta: float, east_vec: Dict[str, float], west_vec: Dict[str, float]) -> float:
+    if abs(delta) < 1e-9:
+        return 0.0
+
+    def _mult(vec: Dict[str, float]) -> float:
+        coop = vec.get("cooperation", 0.5)
+        trust = vec.get("trust_in_others", 0.5)
+        aggression = vec.get("aggression", 0.5)
+        if delta > 0:
+            return max(0.5, min(1.3, 0.7 + 0.4 * coop + 0.2 * trust - 0.2 * aggression))
+        return max(0.5, min(1.3, 0.7 + 0.3 * aggression + 0.2 * trust - 0.1 * coop))
+
+    east_mult = _mult(_safe_vec(east_vec))
+    west_mult = _mult(_safe_vec(west_vec))
+    return delta * ((east_mult + west_mult) / 2.0)
+
+
+def _update_exploitation_streak(trade_type: str, model: Any) -> None:
+    if trade_type.endswith("for_east"):
+        model.east.exploitation_streak += 1
+        model.west.exploitation_streak = 0
+    elif trade_type.endswith("for_west"):
+        model.west.exploitation_streak += 1
+        model.east.exploitation_streak = 0
+    else:
+        model.east.exploitation_streak = 0
+        model.west.exploitation_streak = 0
 
 
 def run_negotiation(model: Any) -> None:
@@ -44,6 +87,9 @@ def run_negotiation(model: Any) -> None:
             "population": model.east.population,
             "relation_to_neighbor": model.east.relation_to_neighbor,
             "relation_score": model.east.relation_score,
+            "personality_vector": dict(model.east.personality_vector),
+            "active_traits": list(model.east.active_traits),
+            "other_trait_notes": model.east.other_trait_notes,
         },
         "west": {
             "food": model.west.food,
@@ -51,6 +97,9 @@ def run_negotiation(model: Any) -> None:
             "population": model.west.population,
             "relation_to_neighbor": model.west.relation_to_neighbor,
             "relation_score": model.west.relation_score,
+            "personality_vector": dict(model.west.personality_vector),
+            "active_traits": list(model.west.active_traits),
+            "other_trait_notes": model.west.other_trait_notes,
         },
         "last_actions": {
             "east": getattr(model.leader_east, "last_action", None),
@@ -78,6 +127,7 @@ def run_negotiation(model: Any) -> None:
         "population": model.west.population,
     }
 
+    # Clamp flows to available resources.
     if food_flow > 0:
         food_flow = min(food_flow, int(model.east.food))
     elif food_flow < 0:
@@ -87,6 +137,45 @@ def run_negotiation(model: Any) -> None:
         wealth_flow = min(wealth_flow, int(model.west.wealth))
     elif wealth_flow < 0:
         wealth_flow = max(wealth_flow, -int(model.east.wealth))
+
+    def _food_safety(before: Dict[str, float]) -> tuple[float, float]:
+        required = (before.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
+        ratio = before.get("food", 0.0) / required if required > 0 else float("inf")
+        return ratio, required
+
+    east_safety, east_required = _food_safety(east_before)
+    west_safety, west_required = _food_safety(west_before)
+
+    # Block uphill gifts when donor is not safer.
+    if food_flow > 0 and east_safety <= west_safety + 0.05:
+        food_flow = 0
+    if food_flow < 0 and west_safety <= east_safety + 0.05:
+        food_flow = 0
+    if wealth_flow > 0 and (model.west.wealth <= model.east.wealth or west_safety <= east_safety + 0.1):
+        wealth_flow = 0
+    if wealth_flow < 0 and (model.east.wealth <= model.west.wealth or east_safety <= west_safety + 0.1):
+        wealth_flow = 0
+
+    # Only adjust direction if a non-zero trade was proposed (and not blocked above).
+    if food_flow != 0 or wealth_flow != 0:
+        if west_safety < 1.0 and east_safety >= 1.2 and food_flow <= 0:
+            desired = max(1, int(round(max(0.0, west_required - west_before["food"]))))
+            food_flow = min(desired, int(model.east.food))
+        elif east_safety < 1.0 and west_safety >= 1.2 and food_flow >= 0:
+            desired = max(1, int(round(max(0.0, east_required - east_before["food"]))))
+            food_flow = -min(desired, int(model.west.food))
+
+    # Prevent wealth flowing from the poorer side to the richer one when the poorer side is food-insecure or clearly poorer.
+    if wealth_flow > 0 and (
+        (west_safety < 1.1 and model.west.wealth < model.east.wealth)
+        or model.west.wealth < 0.8 * model.east.wealth
+    ):
+        wealth_flow = 0
+    if wealth_flow < 0 and (
+        (east_safety < 1.1 and model.east.wealth < model.west.wealth)
+        or model.east.wealth < 0.8 * model.west.wealth
+    ):
+        wealth_flow = 0
 
     if food_flow > 0:
         model.east.food -= food_flow
@@ -175,24 +264,45 @@ def run_negotiation(model: Any) -> None:
                 else:
                     trade_type = f"mildly_exploitative_for_{victim}"
 
-    score = model.east.relation_score
+    _update_exploitation_streak(trade_type, model)
+
+    score_before = float(model.east.relation_score)
+    base_delta = 0.0
     if trade_type in ("gift_from_east", "gift_from_west"):
-        score += 1
-    elif trade_type == "balanced_trade" and score >= 0:
-        score += 1
+        base_delta = 0.25
+    elif trade_type == "balanced_trade" and score_before >= 0:
+        base_delta = 0.25
     elif trade_type.startswith("mildly_exploitative"):
-        score -= 1
+        base_delta = -0.25
     elif trade_type.startswith("strongly_exploitative"):
-        score -= 2
-    score = max(-2, min(2, score))
+        base_delta = -0.5
+    score = score_before + _relation_delta_with_personality(base_delta, model.east.personality_vector, model.west.personality_vector)
+    score = max(-2.0, min(2.0, score))
     model.east.relation_score = score
     model.west.relation_score = score
     new_label = relation_label(score)
     model.east.relation_to_neighbor = new_label
     model.west.relation_to_neighbor = new_label
 
+    if trade_type.startswith("strongly_exploitative_for_east") or trade_type.startswith("mildly_exploitative_for_east"):
+        model.east.other_trait_notes = "They pushed exploitative trades recently."
+        model.west.other_trait_notes = "You pressed a lopsided trade; expect caution from them."
+    elif trade_type.startswith("strongly_exploitative_for_west") or trade_type.startswith("mildly_exploitative_for_west"):
+        model.west.other_trait_notes = "They pushed exploitative trades recently."
+        model.east.other_trait_notes = "You pressed a lopsided trade; expect caution from them."
+    elif trade_type == "balanced_trade":
+        model.east.other_trait_notes = "Recent talks landed on a balanced deal."
+        model.west.other_trait_notes = "Recent talks landed on a balanced deal."
+    elif trade_type in ("gift_from_east", "gift_from_west"):
+        model.east.other_trait_notes = "Gifts were exchanged; goodwill may be building."
+        model.west.other_trait_notes = "Gifts were exchanged; goodwill may be building."
+    else:
+        model.east.other_trait_notes = "No clear shift in style this step."
+        model.west.other_trait_notes = "No clear shift in style this step."
+
     trade_reason = str(trade.get("reason", "no trade reason provided")).strip() or "no trade reason provided"
 
+    relation_delta_actual = score - score_before
     entry = {
         "event_type": "negotiation",
         "step": model.steps,
@@ -217,6 +327,9 @@ def run_negotiation(model: Any) -> None:
         "trade_type": trade_type,
         "relation_score": score,
         "relation_label": new_label,
+        "relation_delta": relation_delta_actual,
+        "east_traits": list(model.east.active_traits),
+        "west_traits": list(model.west.active_traits),
     }
     model.chronicle.append(entry)
     model.current_step_log["negotiation"] = {

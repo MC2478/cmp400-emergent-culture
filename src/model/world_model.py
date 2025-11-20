@@ -11,42 +11,51 @@ import mesa
 import config
 from src.agents.leader import LeaderAgent, TerritoryState
 from src.model.diplomacy import relation_label, run_negotiation
+from src.model.environment import EnvironmentSnapshot, generate_environment
 from src.model.economy import apply_population_dynamics, apply_wages
 from src.model.llm_client import LLMDecisionClient, LLMConfig
 from src.model.log_utils import append_chronicle_upkeep, print_step_summary
+from src.model.traits import add_trait_to_state, sample_starting_trait
 
 
 class WorldModel(mesa.Model):
     """Track two territories, plug in leader agents, and collect decisions/negotiations for analysis."""
 
-    def __init__(self, random_seed: int | None = None, initial_food: float = config.STARTING_FOOD, use_llm: bool = False) -> None:
-        """Accept ``random_seed``, ``initial_food``, and ``use_llm`` so runs are reproducible."""
+    def __init__(self, random_seed: int | None = None, initial_food: float | None = None, use_llm: bool = False) -> None:
+        """Accept ``random_seed``, optional ``initial_food`` override, and ``use_llm`` so runs are reproducible."""
         super().__init__(seed=random_seed)
         self.chronicle: List[Dict[str, Any]] = []
+        self.environment: EnvironmentSnapshot = generate_environment(self.random)
 
         # Initialise East and West with asymmetric yields.
+        east_env = self.environment.east
+        west_env = self.environment.west
+        starting_food_east = float(initial_food) if initial_food is not None else east_env.starting_food
+        starting_food_west = float(initial_food) if initial_food is not None else west_env.starting_food
+        starting_wealth_east = east_env.starting_wealth
+        starting_wealth_west = west_env.starting_wealth
         self.east = TerritoryState(
             name="East",
-            food=float(initial_food),
-            wealth=config.STARTING_WEALTH,
+            food=starting_food_east,
+            wealth=starting_wealth_east,
             relation_to_neighbor="neutral",
             population=config.STARTING_POPULATION,
-            food_yield=config.EAST_FOOD_YIELD,
-            wealth_yield=config.EAST_WEALTH_YIELD,
-            wood=config.STARTING_WOOD,
-            wood_yield=config.EAST_WOOD_YIELD,
+            food_yield=east_env.food_yield,
+            wealth_yield=east_env.wealth_yield,
+            wood=east_env.starting_wood,
+            wood_yield=east_env.wood_yield,
             infrastructure_level=config.STARTING_INFRASTRUCTURE_LEVEL,
         )
         self.west = TerritoryState(
             name="West",
-            food=float(initial_food),
-            wealth=config.STARTING_WEALTH,
+            food=starting_food_west,
+            wealth=starting_wealth_west,
             relation_to_neighbor="neutral",
             population=config.STARTING_POPULATION,
-            food_yield=config.WEST_FOOD_YIELD,
-            wealth_yield=config.WEST_WEALTH_YIELD,
-            wood=config.STARTING_WOOD,
-            wood_yield=config.WEST_WOOD_YIELD,
+            food_yield=west_env.food_yield,
+            wealth_yield=west_env.wealth_yield,
+            wood=west_env.starting_wood,
+            wood_yield=west_env.wood_yield,
             infrastructure_level=config.STARTING_INFRASTRUCTURE_LEVEL,
         )
         self.seasons = list(config.SEASONS)
@@ -56,6 +65,13 @@ class WorldModel(mesa.Model):
         self.west.relation_score = 0
         self.east.relation_to_neighbor = initial_label
         self.west.relation_to_neighbor = initial_label
+
+        east_start_trait = sample_starting_trait(east_env.category, self.random)
+        west_start_trait = sample_starting_trait(west_env.category, self.random)
+        if east_start_trait:
+            add_trait_to_state(self.east, east_start_trait, step=0, reason=f"environment:{east_env.category}")
+        if west_start_trait:
+            add_trait_to_state(self.west, west_start_trait, step=0, reason=f"environment:{west_env.category}")
 
         llm_client: LLMDecisionClient | None = None
         if use_llm:
@@ -87,6 +103,16 @@ class WorldModel(mesa.Model):
     def get_config_summary(self) -> dict:
         """Snapshot the core knobs so they can be serialised alongside a run."""
         return {
+            "environment": {
+                "east": {
+                    "category": self.environment.east.category,
+                    **self.environment.east.metrics,
+                },
+                "west": {
+                    "category": self.environment.west.category,
+                    **self.environment.west.metrics,
+                },
+            },
             "territories": {
                 "East": {
                     "initial_food": self.east.food,
@@ -134,6 +160,14 @@ class WorldModel(mesa.Model):
         lines: list[str] = []
         lines.append("Simulation configuration summary")
         lines.append("================================")
+        lines.append("")
+        lines.append("Environment:")
+        lines.append(f"  East category: {self.environment.east.category}")
+        for key, value in self.environment.east.metrics.items():
+            lines.append(f"    east_{key}: {value:.3f}")
+        lines.append(f"  West category: {self.environment.west.category}")
+        for key, value in self.environment.west.metrics.items():
+            lines.append(f"    west_{key}: {value:.3f}")
         lines.append("")
         lines.append("Territories:")
         for name, tcfg in cfg["territories"].items():
@@ -305,6 +339,8 @@ class WorldModel(mesa.Model):
             "wood": self.west.wood,
             "infrastructure_level": self.west.infrastructure_level,
         }
+        self._update_starvation_pressure(east_before, self.east)
+        self._update_starvation_pressure(west_before, self.west)
         apply_population_dynamics(self.east)
         apply_population_dynamics(self.west)
         east_after = {
@@ -339,3 +375,13 @@ class WorldModel(mesa.Model):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as f:
             json.dump(self.chronicle, f, indent=2)
+
+    def _update_starvation_pressure(self, before_state: Dict[str, Any], territory: TerritoryState) -> None:
+        """Increment or reset starvation streaks based on pre-upkeep safety."""
+        required = (before_state.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
+        food = before_state.get("food", 0.0)
+        ratio = food / required if required > 0 else float("inf")
+        if ratio < 1.0:
+            territory.starvation_streak += 1
+        else:
+            territory.starvation_streak = 0

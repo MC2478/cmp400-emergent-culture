@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
 from typing import Optional
+import contextlib
+import sys
 
 import config
 from src.model.world_model import WorldModel
@@ -21,7 +23,7 @@ class RunConfig:
 
     steps: int = 25
     seed: int = 42
-    initial_food: float = config.STARTING_FOOD
+    initial_food: Optional[float] = None
     use_llm: bool = True
 
     def chronicle_path(self) -> Path:
@@ -42,7 +44,7 @@ def run_demo(
 
     :param steps: I control how many simulation steps to run.
     :param seed: I pass this seed into the model for deterministic runs.
-    :param initial_food: I override the config default when I want quick tweaks from the CLI.
+    :param initial_food: I override the seed-derived starting food when I want quick tweaks from the CLI.
     :param save_log: I set this to False if I do not want to write the chronicle to disk.
     :param use_llm: I flip this flag to switch between the LLM override and rule-based logic.
     :param config: I pass a ``RunConfig`` when I want to manage all knobs from one object.
@@ -63,9 +65,7 @@ def run_demo(
         use_llm=config.use_llm,
     )
     # I snapshot the current configuration so I can review the key knobs alongside each run.
-    logs_dir = Path("logs")
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    config_path = logs_dir / "config_summary.txt"
+    config_path = _choose_run_artifact_path("config_summary", config.seed, config.steps, ".txt")
     model.save_config_summary(str(config_path))
 
     for _ in range(config.steps):
@@ -81,6 +81,7 @@ def run_demo(
         model.save_chronicle(out_path)
         print(f"Saved chronicle to {out_path.resolve()}")
         summarize_chronicle(out_path)
+
 
 
 def summarize_chronicle(path: Path) -> None:
@@ -144,6 +145,42 @@ def summarize_chronicle(path: Path) -> None:
     print_stats("West food", west_food_stats)
 
 
+class Tee:
+    """Simple tee to duplicate stdout/stderr to a file."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data: str) -> int:
+        for stream in self.streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
+
+
+def _choose_run_artifact_path(prefix: str, seed: int, steps: int, ext: str) -> Path:
+    """I save run artifacts under logs/ and avoid clobbering previous runs."""
+    logs_dir = Path("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    base = logs_dir / f"{prefix}_seed{seed}_steps{steps}{ext}"
+    if not base.exists():
+        return base
+    idx = 1
+    while True:
+        candidate = logs_dir / f"{prefix}_seed{seed}_steps{steps}_run{idx}{ext}"
+        if not candidate.exists():
+            return candidate
+        idx += 1
+
+
+def _choose_output_log_path(seed: int, steps: int) -> Path:
+    """I save output logs under logs/ and avoid clobbering previous runs."""
+    return _choose_run_artifact_path("output_log", seed, steps, ".txt")
+
+
 if __name__ == "__main__":
     raw = input("How many steps should the simulation run for? [default: 25] ")
     try:
@@ -155,5 +192,17 @@ if __name__ == "__main__":
         print("Invalid input, defaulting to 25 steps.")
         steps = 25
 
-    # I run a simple demo here and explicitly enable the LLM for decisions.
-    run_demo(steps=steps, use_llm=True)
+    seed_raw = input("Which seed should I use? [default: 42] ")
+    try:
+        seed_value = int(seed_raw.strip()) if seed_raw.strip() else 42
+    except ValueError:
+        print("Invalid seed, defaulting to 42.")
+        seed_value = 42
+
+    # I run a simple demo here and explicitly enable the LLM for decisions. I also tee console output to output_log.txt.
+    log_path = _choose_output_log_path(seed_value, steps)
+    print(f"Saving console output to {log_path}")
+    with log_path.open("w", encoding="utf-8") as log_file:
+        tee = Tee(sys.stdout, log_file)
+        with contextlib.redirect_stdout(tee), contextlib.redirect_stderr(tee):
+            run_demo(steps=steps, seed=seed_value, use_llm=True)

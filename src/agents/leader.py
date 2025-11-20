@@ -3,7 +3,7 @@ leader alternates between deterministic rules and LLM-backed decisions."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import mesa
@@ -19,6 +19,13 @@ from config import (
 )
 from src.agents.production import apply_allocations, effective_yields as compute_yields, work_points as compute_work_points
 from src.model.llm_client import LLMDecisionClient, summarise_memory_for_prompt
+from src.model.traits import (
+    adaptation_pressure_text,
+    apply_trait_actions,
+    interpret_trait_adjustment,
+    neutral_personality_vector,
+    tick_trait_cooldown,
+)
 
 # I centralise the rule set here so both the LLM and rule-based flows share the same vocabulary.
 WORK_ACTIONS: set[str] = {"focus_food", "focus_wood", "focus_wealth"}
@@ -33,7 +40,7 @@ class TerritoryState:
     food: float
     wealth: float
     relation_to_neighbor: str = "neutral"
-    relation_score: int = 0
+    relation_score: float = 0.0
     population: int = 500
     food_yield: float = 1.0
     wealth_yield: float = 1.0
@@ -44,6 +51,15 @@ class TerritoryState:
     unpaid_steps: int = 0
     on_strike: bool = False
     required_food: float = 0.0
+    personality_vector: Dict[str, float] = field(default_factory=neutral_personality_vector)
+    active_traits: List[str] = field(default_factory=list)
+    trait_cooldown_steps: int = 0
+    trait_history: List[Dict[str, Any]] = field(default_factory=list)
+    trait_events: List[Dict[str, Any]] = field(default_factory=list)
+    other_trait_notes: str = "No clear read on the neighbour yet."
+    exploitation_streak: int = 0
+    starvation_streak: int = 0
+    adaptation_pressure_note: str = ""
 
 
 class LeaderAgent(mesa.Agent):
@@ -74,6 +90,7 @@ class LeaderAgent(mesa.Agent):
         self.next_directive: str = "Stabilise food and explore opportunities."
         self.interaction_log: List[str] = []
         self.max_interactions: int = 8
+        self.last_trait_adjustment: Optional[str] = None
 
     def _required_food(self) -> float:
         """I compute the granular food requirement using the shared config."""
@@ -121,6 +138,12 @@ class LeaderAgent(mesa.Agent):
             "neighbor_wealth": neighbor.wealth if neighbor else None,
             "neighbor_population": neighbor.population if neighbor else None,
             "neighbor_wood": neighbor.wood if neighbor else None,
+            "personality_vector": dict(self.territory.personality_vector),
+            "active_traits": list(self.territory.active_traits),
+            "trait_cooldown_steps": self.territory.trait_cooldown_steps,
+            "exploitation_streak": self.territory.exploitation_streak,
+            "starvation_streak": self.territory.starvation_streak,
+            "other_trait_notes": self.territory.other_trait_notes,
         }
 
     def _state_dict(self) -> Dict[str, Any]:
@@ -129,6 +152,8 @@ class LeaderAgent(mesa.Agent):
         required_food = self._required_food()
         yields = compute_yields(self.territory)
         priority_hint = self._priority_hint()
+        adaptation_text = adaptation_pressure_text(self.territory)
+        self.territory.adaptation_pressure_note = adaptation_text
         state = {
             "territory": self.territory.name,
             "food": self.territory.food,
@@ -148,6 +173,11 @@ class LeaderAgent(mesa.Agent):
             "step": self.model.steps,
             "self_directive": self.next_directive,
             "interaction_text": "\n".join(self.interaction_log[-5:]) if self.interaction_log else "No notable interactions recorded.",
+            "personality_vector": dict(self.territory.personality_vector),
+            "active_traits": list(self.territory.active_traits),
+            "trait_cooldown_steps": self.territory.trait_cooldown_steps,
+            "other_trait_notes": self.territory.other_trait_notes,
+            "adaptation_pressure": self.territory.adaptation_pressure_note,
         }
         if self.neighbor is not None:
             state.update(
@@ -216,6 +246,19 @@ class LeaderAgent(mesa.Agent):
         if len(self.interaction_log) > self.max_interactions:
             self.interaction_log.pop(0)
 
+    def _trait_snapshot(self) -> Dict[str, Any]:
+        """I expose trait state for logging."""
+        return {
+            "active_traits": list(self.territory.active_traits),
+            "personality_vector": dict(self.territory.personality_vector),
+            "trait_cooldown_steps": self.territory.trait_cooldown_steps,
+            "exploitation_streak": self.territory.exploitation_streak,
+            "starvation_streak": self.territory.starvation_streak,
+            "other_trait_notes": self.territory.other_trait_notes,
+            "trait_events": list(self.territory.trait_events),
+            "adaptation_pressure": self.territory.adaptation_pressure_note,
+        }
+
     def _fallback_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """I choose a simple action when the LLM response is unusable."""
         hint = state.get("priority_hint", {})
@@ -236,6 +279,7 @@ class LeaderAgent(mesa.Agent):
             "build_infrastructure": build_flag,
             "reason": "Fallback heuristic decision.",
             "next_prompt": "Stabilise essentials and revisit infrastructure readiness.",
+            "trait_adjustment": "no change",
         }
 
     def decide_rule_based(self) -> Dict[str, Any]:
@@ -307,11 +351,14 @@ class LeaderAgent(mesa.Agent):
 
     def step(self) -> None:
         """I choose an action (LLM preferred) and then execute and log it."""
+        tick_trait_cooldown(self.territory)
+        self.territory.trait_events = []
         if self.territory.population <= 0:
             decision = {
                 "action": "wait",
                 "target": "None",
                 "reason": "No population remaining; the territory has collapsed.",
+                "trait_adjustment": "no change",
             }
             state_before = self._snapshot()
             state_after = dict(state_before)
@@ -362,6 +409,11 @@ class LeaderAgent(mesa.Agent):
         if isinstance(directive, str) and directive.strip():
             self.next_directive = directive.strip()
 
+        trait_adjust_text = str(decision.get("trait_adjustment", "")).strip()
+        self._apply_trait_adjustment_text(trait_adjust_text)
+        decision["trait_events"] = list(self.territory.trait_events)
+        decision["trait_state"] = self._trait_snapshot()
+
         # I enact the decision and ask the model to log the outcome.
         self.apply_action(decision)
         state_after = self._snapshot()
@@ -372,3 +424,17 @@ class LeaderAgent(mesa.Agent):
             after=state_after,
             used_llm=llm_used,
         )
+
+    def _apply_trait_adjustment_text(self, text: str) -> None:
+        """I interpret and apply trait adjustments when cooldown allows."""
+        actions = interpret_trait_adjustment(text)
+        if not actions:
+            return
+        events = apply_trait_actions(
+            self.territory,
+            actions,
+            step=self.model.steps,
+            reason_prefix=f"LLM prompt: {text}" if text else "LLM prompt",
+        )
+        if events:
+            self.last_trait_adjustment = text or "applied actions"

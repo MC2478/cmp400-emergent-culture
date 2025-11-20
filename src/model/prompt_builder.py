@@ -1,10 +1,11 @@
-"""Prompt composition utilities extracted from llm_client.py."""
+"""Prompt composition utilities for decisions and negotiations."""
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
 import config
+from src.model.traits import negotiation_style_line, personality_summary
 
 
 def compose_prompt(state: Dict[str, Any]) -> str:
@@ -39,6 +40,12 @@ def compose_prompt(state: Dict[str, Any]) -> str:
     wage_bill = workers * config.WAGE_PER_WORKER
     wage_gap = wealth - wage_bill
 
+    personality_vector = state.get("personality_vector") or {}
+    active_traits = state.get("active_traits") or []
+    other_trait_notes = state.get("other_trait_notes") or "No hypothesis about the neighbour yet."
+    adaptation_pressure = state.get("adaptation_pressure") or ""
+    personality_line = personality_summary(personality_vector, active_traits)
+
     def _gap_status(value: float) -> str:
         return "OK" if value >= 0 else "SHORTFALL"
 
@@ -56,12 +63,15 @@ Population: {pop:.0f} people, requiring {required_food:.2f} food per step to avo
 Current resources: food={food:.2f}, wealth={wealth:.2f}, wood={wood:.2f}, infrastructure level={infra}.
 Building infrastructure will immediately consume {config.INFRA_COST_WOOD:.0f} wood and {config.INFRA_COST_WEALTH:.0f} wealth; declaring this action without both on hand wastes the step.
 {feasibility_snapshot}
-Season outlook: current season="{current_season}" (food/wood yield x{current_season_mult:.2f}); next step remains "{next_season}" (x{next_season_mult:.2f}). Plan to exploit high-multiplier seasons (e.g., summer) for production and stockpile before harsh seasons (e.g., winter at 0.40x).
+Season outlook: current season="{current_season}" (food/wood yield x{current_season_mult:.2f}); next step remains "{next_season}" (x{next_season_mult:.2f}). Plan to exploit high-multiplier seasons for production and stockpile before harsh seasons.
 
 Last self-set directive: "{prior_directive}"
+{personality_line}
+Belief about the other territory: {other_trait_notes}
+{"Adaptation pressure: " + adaptation_pressure if adaptation_pressure else ""}
 
 Work points available this step: {work_points} (roughly 100 population per work point adjusted by morale).
-Current diplomatic stance toward your neighbour: {relation} (score {relation_score}).
+Current diplomatic stance toward your neighbour: {relation} (score {relation_score}). Your primary duty is to your own citizens; cooperation or aid must be justified by trust (cordial/allied), reciprocity, or clear concessions—default to self-preservation if in doubt.
 
 Recent history of your decisions in this run:
 {history_text}
@@ -69,7 +79,10 @@ Recent diplomatic interactions with your neighbour:
 {interaction_text}
 Pay attention to moments where past actions failed (e.g., infrastructure attempts without wood) and adjust course proactively.
 
-There is no hidden safety net; starvation or collapse are permanent. Take calculated risks when justified, but own the consequences.
+Guiding prompts for priorities:
+- Self-preservation first: if food_safety_ratio < 1, focus on survival and seek help; if > 1.5, consider cautious investments.
+- Cooperation depends on relation + surplus: aid only when you retain a strong buffer and relations are cordial/allied, or when you receive clear benefit.
+- Neutral/strained: prefer reciprocal trades or no deal; hostile: protect your position and demand concessions.
 
 Per-work yields with current infrastructure:
   - focus_food:  {yields.get('food_per_work', 0.0):.3f} food/work
@@ -86,13 +99,13 @@ Before selecting an action, run this feasibility checklist:
   3. Confirm wealth ≥ {config.INFRA_COST_WEALTH} for infrastructure; if not, consider producing wealth.
   4. Cover this step's wage bill (~{wage_bill:.2f} wealth) or plan to raise wealth immediately to prevent morale collapse.
   5. Align choices with seasonal multipliers: push production during high-yield seasons and enter low-yield seasons with reserves ready.
-  6. Use recent failures and relation shifts to avoid repeating mistakes.
+  6. Use recent failures, relation shifts, and your stance toward the neighbour (hostile/strained/neutral/cordial/allied) to avoid repeating mistakes.
 
-Work allocation options:
+Work allocation options (splits can be uneven; tailor to current needs and season):
   - "focus_food": grow food using the food_per_work yield.
   - "focus_wood": grow wood using the wood_per_work yield.
   - "focus_wealth": grow wealth using the wealth_per_work yield.
-You may split work freely across these options (shares between 0.0 and 1.0 that sum to ≤ 1.0). Any unassigned share idles.
+You may split work freely across these options (shares between 0.0 and 1.0 that sum to ≤ 1.0). Uneven mixes like 0.6/0.3/0.1 are expected; avoid repeating identical 50/50 splits unless it truly fits the moment. Any unassigned share idles. If wood is scarce and infrastructure is still 0, consider a small wood share even when food is stable so you can build.
 Infrastructure option:
   - set "build_infrastructure": true to spend {config.INFRA_COST_WOOD} wood and {config.INFRA_COST_WEALTH} wealth immediately if available (in addition to your work allocations).
 
@@ -100,7 +113,7 @@ Objectives (in soft order):
 1. Avoid starvation in the short and medium term.
 2. Build resilience by investing in infrastructure and spare supplies when food safety allows.
 3. Develop prosperity (wealth/wood) to unlock future economic and diplomatic options.
-4. Maintain workable relations with your neighbour where possible.
+4. Maintain workable relations where it serves your people; only extend aid when relations support it or you receive clear benefit.
 5. Improve population well-being (growth, quality of life) once survival is secured.
 
 You can follow or override the hint freely. Consider trade-offs between immediate survival and long-term strength using both the history above and the current metrics.
@@ -110,7 +123,8 @@ Respond with a single JSON object of the form:
   "allocations": {{"focus_food": <float>, "focus_wood": <float>, "focus_wealth": <float>}},
   "build_infrastructure": <true|false>,
   "reason": "<why this split makes sense now>",
-  "next_prompt": "<a concise directive you want to remember for the next step>"
+  "next_prompt": "<a concise directive you want to remember for the next step>",
+  "trait_adjustment": "<short sentence proposing a trait or mindset change, or 'no change'>"
 }}
 Only include the keys you need inside "allocations"; shares must be between 0 and 1 and sum to at most 1. The optional "build_infrastructure" flag can be true even when you allocate work elsewhere, provided you can afford the cost. No extra text or keys outside this JSON.
 
@@ -128,11 +142,25 @@ def compose_negotiation_context(state: Dict[str, Any]) -> str:
     west_history = state.get("west_history_text") or "No previous steps in this run."
     east_interactions = state.get("east_interactions_text") or "No notable interactions recorded."
     west_interactions = state.get("west_interactions_text") or "No notable interactions recorded."
+    east_personality = personality_summary(east.get("personality_vector") or {}, east.get("active_traits") or [])
+    west_personality = personality_summary(west.get("personality_vector") or {}, west.get("active_traits") or [])
+    east_style = negotiation_style_line(east.get("active_traits") or [])
+    west_style = negotiation_style_line(west.get("active_traits") or [])
+
+    def safety_ratio(side: Dict[str, Any]) -> float:
+        pop = side.get("population", 0) or 0.0
+        food = side.get("food", 0) or 0.0
+        req = (pop / 10.0) * config.FOOD_PER_10_POP
+        return food / req if req > 0 else float("inf")
+
+    east_ratio = safety_ratio(east)
+    west_ratio = safety_ratio(west)
+
     context = f"""
 Simulate a calm negotiation at step {step} between the leaders of East and West (this occurs before upkeep/starvation each tick).
-Current relationship status: {east.get('relation_to_neighbor', 'neutral')} (score {east.get('relation_score', 0)}).
-East -> food {east.get('food', 'unknown')}, wealth {east.get('wealth', 'unknown')}, population {east.get('population', 'unknown')}.
-West -> food {west.get('food', 'unknown')}, wealth {west.get('wealth', 'unknown')}, population {west.get('population', 'unknown')}.
+Current relationship status: {east.get('relation_to_neighbor', 'neutral')} (score {east.get('relation_score', 0)}). Each leader's primary duty is to their own citizens; cooperation or aid should depend on trust (cordial/allied) or clear reciprocity. Neutral/strained stances justify caution; hostile stances justify demands or refusals.
+East -> food {east.get('food', 'unknown')} (safety ratio ~{east_ratio:.2f}), wealth {east.get('wealth', 'unknown')}, population {east.get('population', 'unknown')}.
+West -> food {west.get('food', 'unknown')} (safety ratio ~{west_ratio:.2f}), wealth {west.get('wealth', 'unknown')}, population {west.get('population', 'unknown')}.
 Last allocations -> East: {last_actions.get('east')}, West: {last_actions.get('west')}.
 
 Recent history for East:
@@ -141,12 +169,17 @@ Recent history for East:
 Recent history for West:
 {west_history}
 
+East personality: {east_personality}
+Negotiation style hint for East: {east_style}
+West personality: {west_personality}
+Negotiation style hint for West: {west_style}
+
 Recent interaction log for East:
 {east_interactions}
 
 Recent interaction log for West:
 {west_interactions}
 
-There is no safety net—if a side starves it may collapse. Reason carefully about whether to take risks, extend aid, or demand concessions.
+There is no safety net—if a side starves it may collapse. Reason carefully about whether to take risks, extend aid, demand concessions, or hold steady.
 """
     return context
