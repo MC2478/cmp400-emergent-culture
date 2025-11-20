@@ -28,7 +28,7 @@ def _fmt_pop(value: Any) -> str:
     except (TypeError, ValueError):
         return "n/a"
 from src.agents.leader import LeaderAgent, TerritoryState
-from src.model.llm_client import LLMDecisionClient, LLMConfig
+from src.model.llm_client import LLMDecisionClient, LLMConfig, summarise_memory_for_prompt
 
 
 class WorldModel(mesa.Model):
@@ -90,23 +90,21 @@ class WorldModel(mesa.Model):
         self.agents.add(self.leader_east)
         self.agents.add(self.leader_west)
 
-    def current_season(self) -> str:
-        """I expose the current season derived from the simulation step counter."""
+    def _season_for_step(self, step_number: int) -> str:
         if not self.seasons:
             return "unknown"
-        if self.steps <= 0:
+        if step_number <= 0:
             return self.seasons[0]
-        idx = (self.steps - 1) % len(self.seasons)
+        idx = ((step_number - 1) // 2) % len(self.seasons)
         return self.seasons[idx]
+
+    def current_season(self) -> str:
+        """I expose the current season derived from the simulation step counter."""
+        return self._season_for_step(self.steps)
 
     def next_season(self) -> str:
         """I expose the upcoming season so the LLM can plan ahead."""
-        if not self.seasons:
-            return "unknown"
-        if self.steps < 0:
-            return self.seasons[0]
-        idx = self.steps % len(self.seasons)
-        return self.seasons[idx]
+        return self._season_for_step(self.steps + 1)
 
     def get_config_summary(self) -> dict:
         """I expose a snapshot of the core knobs so I can serialise them elsewhere."""
@@ -254,6 +252,9 @@ class WorldModel(mesa.Model):
             "action": meta.get("action"),
             "target": meta.get("target"),
             "reason": meta.get("reason"),
+            "allocations": meta.get("applied_allocations") or meta.get("allocations"),
+            "build_infrastructure_requested": bool(meta.get("build_infrastructure")),
+            "infrastructure_built": meta.get("infrastructure_built"),
             "food_before": before.get("food"),
             "food_after": after.get("food"),
             "wealth_before": before.get("wealth"),
@@ -277,6 +278,49 @@ class WorldModel(mesa.Model):
             "neighbor_wood_after": after.get("neighbor_wood"),
         }
         self.chronicle.append(entry)
+
+    def _record_leader_memories(
+        self,
+        *,
+        east_before: Dict[str, Any],
+        east_after: Dict[str, Any],
+        west_before: Dict[str, Any],
+        west_after: Dict[str, Any],
+    ) -> None:
+        """I capture before/after stats for each leader so their prompts can include memory."""
+
+        def _starving_flag(before_state: Dict[str, Any]) -> bool:
+            required = (before_state.get("population", 0.0) / 10.0) * config.FOOD_PER_10_POP
+            return before_state.get("food", 0.0) < required
+
+        def _record(leader: LeaderAgent, before_state: Dict[str, Any], after_state: Dict[str, Any]) -> None:
+            action = leader.last_action or "wait"
+            note_bits: list[str] = []
+            if leader.last_reason:
+                note_bits.append(str(leader.last_reason))
+            morale_mult = getattr(leader.territory, "effective_work_multiplier", 1.0)
+            unpaid = getattr(leader.territory, "unpaid_steps", 0)
+            if getattr(leader.territory, "on_strike", False):
+                note_bits.append(f"workers on strike (mult {morale_mult:.2f}, unpaid debt {unpaid:.1f})")
+            elif morale_mult < 0.999:
+                note_bits.append(f"low morale mult {morale_mult:.2f} (unpaid debt {unpaid:.1f})")
+            note_text = " | ".join(note_bits) if note_bits else None
+            leader.record_step_outcome(
+                step=self.steps,
+                action=action,
+                food_before=float(before_state.get("food", 0.0)),
+                food_after=float(after_state.get("food", 0.0)),
+                wealth_before=float(before_state.get("wealth", 0.0)),
+                wealth_after=float(after_state.get("wealth", 0.0)),
+                pop_before=float(before_state.get("population", 0.0)),
+                pop_after=float(after_state.get("population", 0.0)),
+                starving=_starving_flag(before_state),
+                strike=getattr(leader.territory, "on_strike", False),
+                note=note_text,
+            )
+
+        _record(self.leader_east, east_before, east_after)
+        _record(self.leader_west, west_before, west_after)
 
     def _append_chronicle_upkeep(self, east_before, east_after, west_before, west_after) -> None:
         entry = {
@@ -317,16 +361,26 @@ class WorldModel(mesa.Model):
                 before = decision.get("before", {})
                 after = decision.get("after", {})
                 used_llm = "yes" if decision.get("used_llm") else "no"
-                reason = decision.get("decision", {}).get("reason", "no reason provided")
-                action = decision.get("decision", {}).get("action")
+                meta = decision.get("decision", {})
+                reason = meta.get("reason", "no reason provided")
+                action = meta.get("action") or ("mixed_allocation" if meta.get("applied_allocations") else "wait")
+                allocations = meta.get("applied_allocations") or meta.get("allocations") or {}
+                allocation_line = ""
+                if allocations:
+                    formatted_allocs = ", ".join(f"{k}:{float(v):.2f}" for k, v in allocations.items())
+                    allocation_line = f"\n    ⋅ Work allocation: {formatted_allocs}"
+                infra_line = ""
+                if meta.get("build_infrastructure"):
+                    status = "built" if meta.get("infrastructure_built") else "failed"
+                    infra_line = f"\n    ⋅ Infrastructure attempt: {status}"
                 print(
                     f"  {territory}: action={action} (LLM: {used_llm})\n"
-                    f"    Resources: food {_fmt_res(before.get('food'))}->{_fmt_res(after.get('food'))}, "
+                    f"    ⋅ Reason: {reason}{allocation_line}{infra_line}\n"
+                    f"    ⋅ Resources: food {_fmt_res(before.get('food'))}->{_fmt_res(after.get('food'))}, "
                     f"wealth {_fmt_res(before.get('wealth'))}->{_fmt_res(after.get('wealth'))}, "
                     f"wood {_fmt_res(before.get('wood'))}->{_fmt_res(after.get('wood'))}, "
                     f"infra {before.get('infrastructure_level')}->{after.get('infrastructure_level')}\n"
-                    f"    Pop: {_fmt_pop(before.get('population'))}\n"
-                    f"    Reason: {reason}"
+                    f"    ⋅ Population: {_fmt_pop(before.get('population'))}"
                 )
                 self._append_chronicle_action(territory, info)
 
@@ -337,10 +391,18 @@ class WorldModel(mesa.Model):
             east_after = negotiation_info["east_after"]
             west_before = negotiation_info["west_before"]
             west_after = negotiation_info["west_after"]
+            dialogue_lines = entry.get("dialogue") or []
+            if dialogue_lines:
+                formatted = [f"      {line['speaker']}: \"{line['line']}\"" for line in dialogue_lines]
+                dialogue_block = "\n" + "\n".join(formatted)
+            else:
+                dialogue_block = (
+                    f"    East: \"{entry['east_line']}\"\n"
+                    f"    West: \"{entry['west_line']}\""
+                )
             print(
                 f"\n  Negotiation at step {self.steps} ({entry.get('trade_type')}):\n"
-                f"    East: \"{entry['east_line']}\"\n"
-                f"    West: \"{entry['west_line']}\"\n"
+                f"{dialogue_block}\n"
                 f"    Trade flows -> food East->West {entry['trade']['food_from_east_to_west']}, "
                 f"wealth West->East {entry['trade']['wealth_from_west_to_east']}\n"
                 f"      East after trade: food {_fmt_res(east_before['food'])}->{_fmt_res(east_after['food'])}, "
@@ -362,8 +424,10 @@ class WorldModel(mesa.Model):
                     f"on_strike={after_w.get('on_strike')}, unpaid_steps={after_w.get('unpaid_steps')}"
                 )
         if wage_lines:
+            print("")
             print("\n".join(wage_lines))
 
+        print("")
         for idx, territory in enumerate(["West", "East"]):
             info = self.current_step_log.get(territory, {})
             upkeep = info.get("upkeep", {})
@@ -384,7 +448,7 @@ class WorldModel(mesa.Model):
 
     def apply_wages(self, territory: TerritoryState) -> None:
         """I deduct wages and model morale strikes when wealth runs dry."""
-        workers = max(0, territory.population // config.PEOPLE_PER_WORK_POINT)
+        workers = max(0.0, territory.population / config.PEOPLE_PER_WORK_POINT)
         wage_per_worker = config.WAGE_PER_WORKER
         wage_bill = workers * wage_per_worker
         if wage_bill <= 0:
@@ -396,16 +460,28 @@ class WorldModel(mesa.Model):
         if territory.wealth >= wage_bill:
             territory.wealth -= wage_bill
             territory.effective_work_multiplier = 1.0
-            territory.unpaid_steps = 0
+            territory.unpaid_steps = 0.0
             territory.on_strike = False
             return
 
-        territory.unpaid_steps += 1
-        territory.wealth = 0.0
-        if territory.unpaid_steps >= config.STRIKE_THRESHOLD_STEPS:
-            territory.on_strike = True
-        morale = config.STRIKE_MULTIPLIER if territory.on_strike else config.LOW_MORALE_MULTIPLIER
-        territory.effective_work_multiplier = morale
+        amount_paid = max(0.0, min(territory.wealth, wage_bill))
+        coverage = amount_paid / wage_bill if wage_bill > 0 else 0.0
+        territory.wealth -= amount_paid
+        territory.wealth = max(0.0, territory.wealth)
+
+        shortfall = 1.0 - coverage
+        territory.unpaid_steps = max(0.0, territory.unpaid_steps + shortfall)
+        if coverage > 0.0:
+            territory.unpaid_steps = max(
+                0.0, territory.unpaid_steps - coverage * config.PARTIAL_PAY_RECOVERY
+            )
+
+        territory.on_strike = territory.unpaid_steps >= config.STRIKE_THRESHOLD_STEPS
+        if territory.on_strike:
+            territory.effective_work_multiplier = config.STRIKE_MULTIPLIER
+        else:
+            morale = config.LOW_MORALE_MULTIPLIER + coverage * (1.0 - config.LOW_MORALE_MULTIPLIER)
+            territory.effective_work_multiplier = max(config.LOW_MORALE_MULTIPLIER, morale)
 
     def _apply_population_dynamics(self, territory: TerritoryState) -> None:
         """I now focus this on upkeep: food consumption, starvation, and simple growth."""
@@ -458,6 +534,10 @@ class WorldModel(mesa.Model):
                 "east": getattr(self.leader_east, "last_action", None),
                 "west": getattr(self.leader_west, "last_action", None),
             },
+            "east_history_text": summarise_memory_for_prompt(self.leader_east.memory_events),
+            "west_history_text": summarise_memory_for_prompt(self.leader_west.memory_events),
+            "east_interactions_text": "\n".join(self.leader_east.interaction_log[-5:]) or "No notable interactions recorded.",
+            "west_interactions_text": "\n".join(self.leader_west.interaction_log[-5:]) or "No notable interactions recorded.",
         }
         decision = self.llm_client.negotiate(state)
 
@@ -607,6 +687,7 @@ class WorldModel(mesa.Model):
             "step": self.steps,
             "east_line": decision.get("east_line", ""),
             "west_line": decision.get("west_line", ""),
+            "dialogue": decision.get("dialogue"),
             "trade": {
                 "food_from_east_to_west": food_flow,
                 "wealth_from_west_to_east": wealth_flow,
@@ -634,6 +715,13 @@ class WorldModel(mesa.Model):
             "west_before": west_before,
             "west_after": west_after,
         }
+        summary_base = f"Step {self.steps}: trade_type={trade_type}, relation={new_label}, flows(E→W food {food_flow}, W→E wealth {wealth_flow})"
+        self.leader_east.record_interaction(
+            f"{summary_base}; West said \"{entry.get('west_line', '')}\"."
+        )
+        self.leader_west.record_interaction(
+            f"{summary_base}; East said \"{entry.get('east_line', '')}\"."
+        )
 
     def step(self) -> None:
         """I advance the Mesa scheduler one tick so the leader agent can act."""
@@ -641,6 +729,12 @@ class WorldModel(mesa.Model):
         super().step()
         self.current_step_log = {}
         print(f"Step {self.steps}:")
+        season = self.current_season()
+        next_season = self.next_season()
+        season_mult = self.season_multipliers.get(season, 1.0)
+        print(
+            f"  World: season={season} (food/wood yield x{season_mult:.2f}), next={next_season}"
+        )
         # I still ask Mesa to shuffle agents even though there is currently only one so the logic scales to councils later.
         self.agents.shuffle_do("step")
         if self.llm_client is not None and self.llm_client.enabled:
@@ -692,6 +786,12 @@ class WorldModel(mesa.Model):
             "infrastructure_level": self.west.infrastructure_level,
         }
         self.log_upkeep(east_before, east_after, west_before, west_after)
+        self._record_leader_memories(
+            east_before=east_before,
+            east_after=east_after,
+            west_before=west_before,
+            west_after=west_after,
+        )
         self._print_step_summary()
 
     def all_territories_dead(self) -> bool:

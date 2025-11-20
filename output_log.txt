@@ -1,0 +1,832 @@
+(.venv) PS C:\Users\micha\Documents\cmp400-emergent-culture> python main.py
+How many steps should the simulation run for? [default: 25] 25
+Step 1:
+  World: season=spring (food/wood yield x1.00), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritise food production to meet immediate needs and wealth growth for future infrastructure investment.
+    ⋅ Work allocation: focus_food:0.50, focus_wealth:0.50
+    ⋅ Resources: food 3.00->3.25, wealth 5.00->5.38, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 100
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritise food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.50, focus_wealth:0.50
+    ⋅ Resources: food 3.00->3.50, wealth 5.00->5.12, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 100
+
+  Negotiation at step 1 (no_trade):
+
+      East: "We appreciate the opportunity to establish a dialogue with the West. Our initial assessment suggests that our current resources are sufficient, but we're open to exploring mutually beneficial arrangements."
+      West: "Thank you for your willingness to engage in discussions. We too believe in cooperation and would like to propose an exchange of information regarding our respective resource distributions and needs."
+      East: "That's a reasonable starting point. However, we must prioritize the stability of both our nations. Before sharing sensitive data, can you tell us about your current food production levels?"
+      West: "Our food production is currently at 3.25 units per tick. We're concerned that this might not be sufficient to sustain our population in the long term and are exploring ways to increase output."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 3.50->3.50, wealth 5.12->5.12
+      West after trade: food 3.25->3.25, wealth 5.38->5.38
+      Relation now: neutral
+
+  Wages West: wealth 5.38->5.33, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 5.12->5.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 3.25->2.75, wealth 5.33->5.33, wood 0.00->0.00, infra 0->0, pop 100->110, required_food 0.50
+  East upkeep: food 3.50->3.00, wealth 5.08->5.08, wood 0.00->0.00, infra 0->0, pop 100->110, required_food 0.50
+
+------------------------------------------------------------
+
+Step 2:
+  World: season=spring (food/wood yield x1.00), next=summer
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment, while also stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.55, focus_wealth:0.45
+    ⋅ Resources: food 2.75->3.05, wealth 5.33->5.70, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 110
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.55, focus_wealth:0.45
+    ⋅ Resources: food 3.00->3.60, wealth 5.08->5.20, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 110
+
+  Negotiation at step 2 (gift_from_west):
+
+      East: "We've been monitoring your situation, and it seems that food production remains a concern for you."
+      West: "Yes, we're still exploring alternative solutions to sustain our population. We appreciate your understanding in this matter."
+      East: "We understand the gravity of the situation and are willing to consider providing aid if it's deemed necessary for your survival."
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 3.60->3.60, wealth 5.20->6.20
+      West after trade: food 3.05->3.05, wealth 5.70->4.70
+      Relation now: cordial
+
+  Wages West: wealth 4.70->4.64, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 6.20->6.14, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 3.05->2.50, wealth 4.64->4.64, wood 0.00->0.00, infra 0->0, pop 110->121, required_food 0.55
+  East upkeep: food 3.60->3.05, wealth 6.14->6.14, wood 0.00->0.00, infra 0->0, pop 110->121, required_food 0.55
+
+------------------------------------------------------------
+
+Step 3:
+  World: season=summer (food/wood yield x1.20), next=summer
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 2.50->3.08, wealth 4.64->4.82, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 121
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 3.05->4.22, wealth 6.14->6.20, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 121
+
+  Negotiation at step 3 (gift_from_west):
+
+      East: "We've noticed your food production levels are still a concern, and we'd like to discuss possible solutions."
+      West: "Yes, our situation remains challenging. We're exploring alternative methods to sustain our population, but any aid would be greatly appreciated at this time."
+      East: "We understand the difficulties you face and are willing to consider providing support. However, we must prioritize our own food safety and wealth growth for future infrastructure investment."
+      West: "We respect your priorities and appreciate your willingness to help. Perhaps we could discuss a mutually beneficial arrangement that addresses both our needs?"
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 4.22->4.22, wealth 6.20->7.20
+      West after trade: food 3.08->3.08, wealth 4.82->3.82
+      Relation now: allied
+
+  Wages West: wealth 3.82->3.76, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 7.20->7.14, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 3.08->2.48, wealth 3.76->3.76, wood 0.00->0.00, infra 0->0, pop 121->133, required_food 0.60
+  East upkeep: food 4.22->3.61, wealth 7.14->7.14, wood 0.00->0.00, infra 0->0, pop 121->133, required_food 0.60
+
+------------------------------------------------------------
+
+Step 4:
+  World: season=summer (food/wood yield x1.20), next=autumn
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming season change.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 2.48->3.12, wealth 3.76->3.96, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 133
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 3.61->4.89, wealth 7.14->7.21, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 133
+
+  Negotiation at step 4 (gift_from_west):
+
+      East: "We've noticed your food production levels are still a concern, and we're willing to discuss potential solutions."
+      West: "Thank you for acknowledging our situation. We're exploring alternative methods to sustain our population, but any aid would be greatly appreciated at this time."
+      East: "We understand the urgency of your situation and are considering providing a moderate amount of food in exchange for wealth, ensuring both our priorities are met while supporting each other's development."
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 4.89->4.89, wealth 7.21->8.21
+      West after trade: food 3.12->3.12, wealth 3.96->2.96
+      Relation now: allied
+
+  Wages West: wealth 2.96->2.90, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 8.21->8.14, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 3.12->2.45, wealth 2.90->2.90, wood 0.00->0.00, infra 0->0, pop 133->146, required_food 0.67
+  East upkeep: food 4.89->4.22, wealth 8.14->8.14, wood 0.00->0.00, infra 0->0, pop 133->146, required_food 0.67
+
+------------------------------------------------------------
+
+Step 5:
+  World: season=autumn (food/wood yield x0.80), next=autumn
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 2.45->2.92, wealth 2.90->3.11, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 146
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 4.22->5.16, wealth 8.14->8.22, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 146
+
+  Negotiation at step 5 (gift_from_west):
+
+      East: "We've noticed your food production levels are still a concern, and we're willing to discuss potential solutions."
+      West: "Thank you for acknowledging our situation; we're open to exploring alternative solutions that benefit both nations."
+      East: "Our own food production levels are stable, but we understand the importance of maintaining a balance between our priorities and your needs."
+      West: "We appreciate your understanding; however, we must prioritize our own development to ensure long-term sustainability for both nations."
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 5.16->5.16, wealth 8.22->9.22
+      West after trade: food 2.92->2.92, wealth 3.11->2.11
+      Relation now: allied
+
+  Wages West: wealth 2.11->2.04, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 9.22->9.14, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 2.92->2.19, wealth 2.04->2.04, wood 0.00->0.00, infra 0->0, pop 146->161, required_food 0.73
+  East upkeep: food 5.16->4.43, wealth 9.14->9.14, wood 0.00->0.00, infra 0->0, pop 146->161, required_food 0.73
+
+------------------------------------------------------------
+
+Step 6:
+  World: season=autumn (food/wood yield x0.80), next=winter
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 2.19->2.70, wealth 2.04->2.28, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 161
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 4.43->5.46, wealth 9.14->9.22, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 161
+
+  Negotiation at step 6 (gift_from_west):
+
+      East: "We appreciate your efforts to sustain your population, but our own food production levels are becoming increasingly strained."
+      West: "I understand the concerns of both nations; we'll continue exploring alternative solutions to meet our immediate needs while investing in sustainable food production for the future."
+      East: "We've noticed your recent investments in infrastructure and sustainable food production; perhaps it's time for us to reassess our own priorities and consider a more balanced approach."
+      West: "A balanced approach is indeed crucial; we'd be willing to discuss potential trade agreements that could benefit both nations, but we must prioritize our immediate food needs first."
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 5.46->5.46, wealth 9.22->10.22
+      West after trade: food 2.70->2.70, wealth 2.28->1.28
+      Relation now: allied
+
+  Wages West: wealth 1.28->1.20, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 10.22->10.14, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 2.70->1.90, wealth 1.20->1.20, wood 0.00->0.00, infra 0->0, pop 161->177, required_food 0.81
+  East upkeep: food 5.46->4.65, wealth 10.14->10.14, wood 0.00->0.00, infra 0->0, pop 161->177, required_food 0.81
+
+------------------------------------------------------------
+
+Step 7:
+  World: season=winter (food/wood yield x0.40), next=winter
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming harsh winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 1.90->2.18, wealth 1.20->1.47, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 177
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 4.65->5.22, wealth 10.14->10.23, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 177
+
+  Negotiation at step 7 (gift_from_west):
+
+      East: "We've noticed your recent struggles to maintain food production, and we're concerned about the potential risks of starvation."
+      West: "Yes, our situation is dire, but we're doing everything in our power to increase food production and avoid collapse."
+      East: "We understand that you're trying your best, but we can't afford to wait until it's too late. We need to discuss possible solutions to ensure the stability of both nations."
+      West: "I agree that we must act quickly. Perhaps we could explore alternative food sources or trade agreements to help alleviate our shortages?"
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 5.22->5.22, wealth 10.23->11.23
+      West after trade: food 2.18->2.18, wealth 1.47->0.47
+      Relation now: allied
+
+  Wages West: wealth 0.47->0.38, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.23->11.14, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 2.18->1.30, wealth 0.38->0.38, wood 0.00->0.00, infra 0->0, pop 177->195, required_food 0.89
+  East upkeep: food 5.22->4.34, wealth 11.14->11.14, wood 0.00->0.00, infra 0->0, pop 177->195, required_food 0.89
+
+------------------------------------------------------------
+
+Step 8:
+  World: season=winter (food/wood yield x0.40), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 1.30->1.65, wealth 0.38->0.53, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 195
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 4.34->5.04, wealth 11.14->11.19, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 195
+
+  Negotiation at step 8 (no_trade):
+
+      East: "We've noticed your recent struggles to maintain food production, and we're concerned about the potential risks to our allied relationship."
+      West: "I appreciate your concern; however, we're working diligently to improve our agricultural output and are confident in our ability to meet our needs."
+      East: "We understand that you're making efforts, but the numbers suggest a concerning trend. We'd like to discuss possible solutions to ensure both nations' stability."
+      West: "I agree that our situation is precarious, and we could benefit from your expertise in managing resources. Perhaps we can explore ways for you to support us without compromising your own priorities?"
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 5.04->5.04, wealth 11.19->11.19
+      West after trade: food 1.65->1.65, wealth 0.53->0.53
+      Relation now: allied
+
+  Wages West: wealth 0.53->0.43, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.19->11.10, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.65->0.67, wealth 0.43->0.43, wood 0.00->0.00, infra 0->0, pop 195->214, required_food 0.97
+  East upkeep: food 5.04->4.06, wealth 11.10->11.10, wood 0.00->0.00, infra 0->0, pop 195->214, required_food 0.97
+
+------------------------------------------------------------
+
+Step 9:
+  World: season=spring (food/wood yield x1.00), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming low-yield season.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 0.67->1.64, wealth 0.43->0.59, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 214
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 4.06->5.78, wealth 11.10->11.10, wood 0.00->0.21, infra 0->0
+    ⋅ Population: 214
+
+  Negotiation at step 9 (no_trade):
+
+      East: "We've noticed your recent struggles to maintain food production, and we're concerned about the potential risks this poses for both our nations."
+      West: "I appreciate your concern; however, we're doing everything in our power to ensure sustainable food production and infrastructure development."
+      East: "We understand that you're working towards a solution, but we can't help but feel that our previous gifts of wealth have been insufficient to address the immediate needs of your nation."
+      West: "While we appreciate the generosity, we must prioritize our own development and ensure that any aid received is used effectively in the long term."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 5.78->5.78, wealth 11.10->11.10
+      West after trade: food 1.64->1.64, wealth 0.59->0.59
+      Relation now: allied
+
+  Wages West: wealth 0.59->0.48, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.10->10.99, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.64->0.57, wealth 0.48->0.48, wood 0.00->0.00, infra 0->0, pop 214->236, required_food 1.07
+  East upkeep: food 5.78->4.71, wealth 10.99->10.99, wood 0.21->0.21, infra 0->0, pop 214->236, required_food 1.07
+
+------------------------------------------------------------
+
+Step 10:
+  World: season=spring (food/wood yield x1.00), next=summer
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 0.57->1.51, wealth 0.48->0.84, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 236
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 4.71->6.59, wealth 10.99->10.99, wood 0.21->0.45, infra 0->0
+    ⋅ Population: 236
+
+  Negotiation at step 10 (no_trade):
+
+      East: "We've noticed your recent struggles to maintain food production and wealth growth. How do you plan to address these challenges?"
+      West: "Thank you for your concern; we're working on implementing sustainable agriculture practices and investing in infrastructure to improve our food production and storage capacity."
+      East: "Those are positive steps, but it may take time to see significant improvements. In the meantime, would you be open to receiving additional support from us?"
+      West: "We appreciate your willingness to help; however, we must also consider our own priorities and ensure that any aid received does not compromise our long-term development goals."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 6.59->6.59, wealth 10.99->10.99
+      West after trade: food 1.51->1.51, wealth 0.84->0.84
+      Relation now: allied
+
+  Wages West: wealth 0.84->0.72, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 10.99->10.87, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.51->0.33, wealth 0.72->0.72, wood 0.00->0.00, infra 0->0, pop 236->259, required_food 1.18
+  East upkeep: food 6.59->5.41, wealth 10.87->10.87, wood 0.45->0.45, infra 0->0, pop 236->259, required_food 1.18
+
+------------------------------------------------------------
+
+Step 11:
+  World: season=summer (food/wood yield x1.20), next=summer
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 0.33->1.57, wealth 0.72->1.11, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 259
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 5.41->7.90, wealth 10.87->10.87, wood 0.45->0.76, infra 0->0
+    ⋅ Population: 259
+
+  Negotiation at step 11 (gift_from_west):
+
+      East: "We've noticed your recent struggles to maintain food production, and we're concerned about the potential risks of starvation."
+      West: "I appreciate your concern, but we're doing our best to manage our resources and invest in sustainable food production."
+      East: "We understand that you're trying to be self-sufficient, but we can't help but notice the significant decline in your food reserves. Is there anything we can do to support each other?"
+    Trade flows -> food East->West 0, wealth West->East 1
+      East after trade: food 7.90->7.90, wealth 10.87->11.87
+      West after trade: food 1.57->1.57, wealth 1.11->0.11
+      Relation now: allied
+
+  Wages West: wealth 0.11->0.00, mult 1.00->0.98, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.87->11.74, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.57->0.28, wealth 0.00->0.00, wood 0.00->0.00, infra 0->0, pop 259->285, required_food 1.30
+  East upkeep: food 7.90->6.61, wealth 11.74->11.74, wood 0.76->0.76, infra 0->0, pop 259->285, required_food 1.30
+
+------------------------------------------------------------
+
+Step 12:
+  World: season=summer (food/wood yield x1.20), next=autumn
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 0.28->1.79, wealth 0.00->0.21, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 285
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 6.61->9.35, wealth 11.74->11.74, wood 0.76->1.10, infra 0->0
+    ⋅ Population: 285
+
+  Negotiation at step 12 (no_trade):
+
+      East: "We've noticed your recent struggles to meet food demands, and we're concerned about the potential risks of starvation."
+      West: "I appreciate your concern, but we're doing our best to manage our resources. We just need a bit more time to get back on track."
+      East: "Time is a luxury we can't afford to waste. If you collapse, it will put both our nations at risk. Can we discuss possible aid or concessions?"
+      West: "I understand your perspective, but we're not looking for handouts. We just need some breathing room to implement sustainable food production and infrastructure."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 9.35->9.35, wealth 11.74->11.74
+      West after trade: food 1.79->1.79, wealth 0.21->0.21
+      Relation now: allied
+
+  Wages West: wealth 0.21->0.07, mult 0.98->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.74->11.60, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.79->0.36, wealth 0.07->0.07, wood 0.00->0.00, infra 0->0, pop 285->314, required_food 1.43
+  East upkeep: food 9.35->7.92, wealth 11.60->11.60, wood 1.10->1.10, infra 0->0, pop 285->314, required_food 1.43
+
+------------------------------------------------------------
+
+Step 13:
+  World: season=autumn (food/wood yield x0.80), next=autumn
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 0.36->1.37, wealth 0.07->0.54, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 314
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 7.92->9.93, wealth 11.60->11.60, wood 1.10->1.35, infra 0->0
+    ⋅ Population: 314
+
+  Negotiation at step 13 (no_trade):
+
+      East: "We've noticed your population growth is slowing down, and we're concerned about the impact on our mutual stability."
+      West: "Yes, our food production has been struggling to keep up with demand. We appreciate your concern for our well-being."
+      East: "We're willing to provide some support, but we need to prioritize our own needs as well. Can you tell us more about your current situation?"
+      West: "Our food production is indeed a challenge, and we've been trying to invest in sustainable solutions. However, it's taking longer than expected to see results."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 9.93->9.93, wealth 11.60->11.60
+      West after trade: food 1.37->1.37, wealth 0.54->0.54
+      Relation now: allied
+
+  Wages West: wealth 0.54->0.38, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.60->11.44, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.37->0.00, wealth 0.38->0.38, wood 0.00->0.00, infra 0->0, pop 314->311, required_food 1.57
+  East upkeep: food 9.93->8.36, wealth 11.44->11.44, wood 1.35->1.35, infra 0->0, pop 314->345, required_food 1.57
+
+------------------------------------------------------------
+
+Step 14:
+  World: season=autumn (food/wood yield x0.80), next=winter
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->1.24, wealth 0.38->0.38, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 311
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 8.36->10.57, wealth 11.44->11.44, wood 1.35->1.63, infra 0->0
+    ⋅ Population: 345
+
+  Negotiation at step 14 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. How do you plan to address these issues?"
+      West: "Thank you for your concern, East. We're working on implementing sustainable agriculture practices and investing in infrastructure to improve our food supply."
+      East: "That sounds like a solid plan. However, we've also noticed that your wealth reserves are dwindling. How do you intend to maintain economic stability?"
+      West: "We're aware of the need to balance our food production with economic growth. We're exploring alternative sources of revenue and investing in education to improve our workforce's productivity."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 10.57->10.57, wealth 11.44->11.44
+      West after trade: food 1.24->1.24, wealth 0.38->0.38
+      Relation now: allied
+
+  Wages West: wealth 0.38->0.23, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.44->11.27, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.24->0.00, wealth 0.23->0.23, wood 0.00->0.00, infra 0->0, pop 311->306, required_food 1.55
+  East upkeep: food 10.57->8.84, wealth 11.27->11.27, wood 1.63->1.63, infra 0->0, pop 345->380, required_food 1.73
+
+------------------------------------------------------------
+
+Step 15:
+  World: season=winter (food/wood yield x0.40), next=winter
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming seasons.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 0.00->0.55, wealth 0.23->0.46, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 306
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and gather wood to avoid immediate shortages before attempting infrastructure investment.
+    ⋅ Work allocation: focus_food:0.80, focus_wood:0.20
+    ⋅ Resources: food 8.84->10.06, wealth 11.27->11.27, wood 1.63->1.78, infra 0->0
+    ⋅ Population: 380
+
+  Negotiation at step 15 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We'd like to discuss possible solutions to ensure a stable future for both our nations."
+      West: "Thank you for your concern, East. We appreciate the understanding and willingness to help. However, we must prioritize our own needs and find ways to increase food production without relying on external aid."
+      East: "We understand that self-sufficiency is crucial, but perhaps we can share some knowledge or resources to help you achieve this goal more efficiently. Our recent infrastructure investments have shown promising results in sustainable food production."
+      West: "That's a generous offer, East. We'd be interested in learning from your experiences and implementing similar strategies. However, we must also consider the risks of relying too heavily on external aid and potentially disrupting our own development trajectory."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 10.06->10.06, wealth 11.27->11.27
+      West after trade: food 0.55->0.55, wealth 0.46->0.46
+      Relation now: allied
+
+  Wages West: wealth 0.46->0.30, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.27->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 0.55->0.00, wealth 0.30->0.30, wood 0.00->0.00, infra 0->0, pop 306->291, required_food 1.53
+  East upkeep: food 10.06->8.16, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 380->418, required_food 1.90
+
+------------------------------------------------------------
+
+Step 16:
+  World: season=winter (food/wood yield x0.40), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->0.58, wealth 0.30->0.30, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 291
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 8.16->9.49, wealth 11.08->11.29, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 418
+
+  Negotiation at step 16 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We'd like to discuss possible solutions to ensure a stable future for both our nations."
+      West: "Thank you for your concern, East. We appreciate the understanding and willingness to help. However, we must prioritize our own development and find ways to sustain ourselves without relying too heavily on external aid."
+      East: "We understand that self-sufficiency is crucial, but we also believe in mutual support and cooperation. Perhaps we can work together to identify areas where our resources can complement each other's strengths and weaknesses?"
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 9.49->9.49, wealth 11.29->11.29
+      West after trade: food 0.58->0.58, wealth 0.30->0.30
+      Relation now: allied
+
+  Wages West: wealth 0.30->0.16, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.29->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 0.58->0.00, wealth 0.16->0.16, wood 0.00->0.00, infra 0->0, pop 291->278, required_food 1.45
+  East upkeep: food 9.49->7.41, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 418->459, required_food 2.09
+
+------------------------------------------------------------
+
+Step 17:
+  World: season=spring (food/wood yield x1.00), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->1.39, wealth 0.16->0.16, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 278
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 7.41->11.08, wealth 11.08->11.31, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 459
+
+  Negotiation at step 17 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We're concerned about the stability of our alliance."
+      West: "I appreciate your concern, but we're doing everything in our power to address these issues. We just need some time to implement sustainable solutions."
+      East: "Time is a luxury we can't afford to give you. Our own food production and population growth are at risk if we don't prioritize our needs now."
+      West: "I understand your perspective, but perhaps there's a way for us to work together to address both of our concerns. We could share knowledge or resources to help each other out."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 11.08->11.08, wealth 11.31->11.31
+      West after trade: food 1.39->1.39, wealth 0.16->0.16
+      Relation now: allied
+
+  Wages West: wealth 0.16->0.02, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.31->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.39->0.00, wealth 0.02->0.02, wood 0.00->0.00, infra 0->0, pop 278->306, required_food 1.39
+  East upkeep: food 11.08->8.78, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 459->505, required_food 2.30
+
+------------------------------------------------------------
+
+Step 18:
+  World: season=spring (food/wood yield x1.00), next=summer
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->1.53, wealth 0.02->0.02, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 306
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 8.78->12.83, wealth 11.08->11.33, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 505
+
+  Negotiation at step 18 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We'd like to discuss possible ways to support each other."
+      West: "Thank you for your concern, East. We're indeed facing significant challenges in meeting our people's basic needs. Any assistance would be greatly appreciated."
+      East: "We've been investing in sustainable food production and infrastructure development to ensure a stable future for both nations. Perhaps we could share some of our knowledge and resources with you?"
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 12.83->12.83, wealth 11.33->11.33
+      West after trade: food 1.53->1.53, wealth 0.02->0.02
+      Relation now: allied
+
+  Wages West: wealth 0.02->0.00, mult 1.00->0.91, on_strike=False, unpaid_steps=0.8234772794533464
+  Wages East: wealth 11.33->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.53->0.00, wealth 0.00->0.00, wood 0.00->0.00, infra 0->0, pop 306->337, required_food 1.53
+  East upkeep: food 12.83->10.30, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 505->556, required_food 2.53
+
+------------------------------------------------------------
+
+Step 19:
+  World: season=summer (food/wood yield x1.20), next=summer
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->1.84, wealth 0.00->0.00, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 337
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 10.30->15.64, wealth 11.08->11.36, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 556
+
+  Negotiation at step 19 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. How do you plan to address these issues?"
+      West: "Thank you for your concern, East. We're working on sustainable food production methods and infrastructure investment to secure a stable future."
+      East: "That sounds promising. However, we've also noticed that our previous agreements have allowed us to invest in wealth growth while avoiding immediate wood shortages. Can you explain why your approach differs?"
+      West: "Our priority is meeting the current needs of our population, given the severe shortfall in food buffer. We're focusing on short-term food production to avoid starvation and long-term infrastructure investment."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 15.64->15.64, wealth 11.36->11.36
+      West after trade: food 1.84->1.84, wealth 0.00->0.00
+      Relation now: allied
+
+  Wages West: wealth 0.00->0.00, mult 0.91->0.90, on_strike=False, unpaid_steps=1.8234772794533463
+  Wages East: wealth 11.36->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.84->0.16, wealth 0.00->0.00, wood 0.00->0.00, infra 0->0, pop 337->370, required_food 1.68
+  East upkeep: food 15.64->12.86, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 556->612, required_food 2.78
+
+------------------------------------------------------------
+
+Step 20:
+  World: season=summer (food/wood yield x1.20), next=autumn
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.16->2.16, wealth 0.00->0.00, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 370
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 12.86->18.73, wealth 11.08->11.38, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 612
+
+  Negotiation at step 20 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We'd like to discuss possible solutions to help stabilize your nation."
+      West: "Thank you for your concern, East. We appreciate any assistance that can be offered. Our primary focus is on increasing food production to meet the needs of our growing population."
+      East: "We understand the importance of food security. Have you considered implementing sustainable farming practices or investing in infrastructure to improve your agricultural output?"
+      West: "Actually, we've been exploring those options, but our current resources are limited. We're open to suggestions and potential aid from East if it can be arranged."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 18.73->18.73, wealth 11.38->11.38
+      West after trade: food 2.16->2.16, wealth 0.00->0.00
+      Relation now: allied
+
+  Wages West: wealth 0.00->0.00, mult 0.90->0.90, on_strike=False, unpaid_steps=2.8234772794533463
+  Wages East: wealth 11.38->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 2.16->0.31, wealth 0.00->0.00, wood 0.00->0.00, infra 0->0, pop 370->407, required_food 1.85
+  East upkeep: food 18.73->15.67, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 612->673, required_food 3.06
+
+------------------------------------------------------------
+
+Step 21:
+  World: season=autumn (food/wood yield x0.80), next=autumn
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 0.31->1.48, wealth 0.00->0.55, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 407
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 15.67->19.98, wealth 11.08->11.41, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 673
+
+  Negotiation at step 21 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. How do you plan to address these issues?"
+      West: "Thank you for your concern, East. We're working on sustainable food production methods and infrastructure investment to secure a stable future."
+      East: "That sounds promising. However, we can't afford to send you any more food at this time. Perhaps we could discuss alternative arrangements?"
+      West: "I understand your position, East. We're willing to accept wealth in exchange for our continued support and alliance."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 19.98->19.98, wealth 11.41->11.41
+      West after trade: food 1.48->1.48, wealth 0.55->0.55
+      Relation now: allied
+
+  Wages West: wealth 0.55->0.35, mult 0.90->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.41->11.08, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.48->0.00, wealth 0.35->0.35, wood 0.00->0.00, infra 0->0, pop 407->396, required_food 2.04
+  East upkeep: food 19.98->16.61, wealth 11.08->11.08, wood 1.78->1.78, infra 0->0, pop 673->740, required_food 3.36
+
+------------------------------------------------------------
+
+Step 22:
+  World: season=autumn (food/wood yield x0.80), next=winter
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming winter season.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 0.00->1.43, wealth 0.35->0.64, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 396
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.70, focus_wealth:0.30
+    ⋅ Resources: food 16.61->20.76, wealth 11.08->11.63, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 740
+
+  Negotiation at step 22 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We're willing to help, but we need to discuss the terms of our aid."
+      West: "I appreciate your understanding and willingness to help; this agreement will allow us to invest in sustainable food production and infrastructure, securing a more stable future for both nations."
+      East: "However, we can't afford to send you any more food at this time. We need to prioritize our own needs and ensure the stability of our nation."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 20.76->20.76, wealth 11.63->11.63
+      West after trade: food 1.43->1.43, wealth 0.64->0.64
+      Relation now: allied
+
+  Wages West: wealth 0.64->0.45, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.63->11.26, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.43->0.00, wealth 0.45->0.45, wood 0.00->0.00, infra 0->0, pop 396->385, required_food 1.98
+  East upkeep: food 20.76->17.06, wealth 11.26->11.26, wood 1.78->1.78, infra 0->0, pop 740->814, required_food 3.70
+
+------------------------------------------------------------
+
+Step 23:
+  World: season=winter (food/wood yield x0.40), next=winter
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food production to meet immediate needs and invest in wealth growth for future infrastructure investment while stockpiling some wealth for the upcoming harsh winter season.
+    ⋅ Work allocation: focus_food:0.90, focus_wealth:0.10
+    ⋅ Resources: food 0.00->0.69, wealth 0.45->0.73, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 385
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 17.06->19.66, wealth 11.26->11.67, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 814
+
+  Negotiation at step 23 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We're willing to help, but we need to discuss the terms of our alliance."
+      West: "I appreciate your understanding and willingness to help; this agreement will allow us to invest in sustainable food production and infrastructure, securing a more stable future for both nations."
+      East: "We're willing to accept wealth in exchange for our continued support, but we need to ensure that our own food safety is not compromised. Can you meet us halfway?"
+      West: "I understand your position, East. We're willing to accept wealth in exchange for our continued support and alliance, but we also need to find a way to stabilize our food production."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 19.66->19.66, wealth 11.67->11.67
+      West after trade: food 0.69->0.69, wealth 0.73->0.73
+      Relation now: allied
+
+  Wages West: wealth 0.73->0.54, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.67->11.26, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 0.69->0.00, wealth 0.54->0.54, wood 0.00->0.00, infra 0->0, pop 385->361, required_food 1.93
+  East upkeep: food 19.66->15.59, wealth 11.26->11.26, wood 1.78->1.78, infra 0->0, pop 814->895, required_food 4.07
+
+------------------------------------------------------------
+
+Step 24:
+  World: season=winter (food/wood yield x0.40), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->0.72, wealth 0.54->0.54, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 361
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 15.59->18.46, wealth 11.26->11.71, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 895
+
+  Negotiation at step 24 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. We're willing to help, but we need to discuss the terms of our assistance."
+      West: "Thank you for your understanding, East. We appreciate any aid that can be offered at this critical time."
+      East: "We understand that your situation is dire, but we also have our own needs to consider. Our population has been growing steadily, and we need to ensure our food production keeps pace."
+      West: "I understand your position, East. We're willing to accept wealth in exchange for our continued support and alliance."
+      East: "That's a reasonable proposal, but we also want to discuss the long-term implications of our aid. How do you plan to address the underlying issues with food production?"
+      West: "We're working on sustainable solutions that will allow us to produce more food and reduce our reliance on external aid."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 18.46->18.46, wealth 11.71->11.71
+      West after trade: food 0.72->0.72, wealth 0.54->0.54
+      Relation now: allied
+
+  Wages West: wealth 0.54->0.36, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.71->11.26, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 0.72->0.00, wealth 0.36->0.36, wood 0.00->0.00, infra 0->0, pop 361->342, required_food 1.81
+  East upkeep: food 18.46->13.98, wealth 11.26->11.26, wood 1.78->1.78, infra 0->0, pop 895->985, required_food 4.48
+
+------------------------------------------------------------
+
+Step 25:
+  World: season=spring (food/wood yield x1.00), next=spring
+  West: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Immediate food production is necessary to avoid starvation and meet the current needs of the population, given the severe shortfall in food buffer.
+    ⋅ Work allocation: focus_food:1.00
+    ⋅ Resources: food 0.00->1.71, wealth 0.36->0.36, wood 0.00->0.00, infra 0->0
+    ⋅ Population: 342
+  East: action=mixed_allocation (LLM: yes)
+    ⋅ Reason: Prioritize food safety and wealth growth to prepare for future infrastructure investment while avoiding immediate wood shortage.
+    ⋅ Work allocation: focus_food:0.80, focus_wealth:0.20
+    ⋅ Resources: food 13.98->21.86, wealth 11.26->11.76, wood 1.78->1.78, infra 0->0
+    ⋅ Population: 985
+
+  Negotiation at step 25 (no_trade):
+
+      East: "We've noticed your recent struggles with food production and population growth. How do you plan to address these issues?"
+      West: "We appreciate your concern, East. We're working on sustainable food production methods and investing in infrastructure to support our growing population."
+      East: "Those sound like promising steps. However, we can't afford to send you any more food at this time. Can you offer us something in return for our continued alliance?"
+      West: "We understand your position, East. We're willing to accept wealth in exchange for our continued support and alliance."
+    Trade flows -> food East->West 0, wealth West->East 0
+      East after trade: food 21.86->21.86, wealth 11.76->11.76
+      West after trade: food 1.71->1.71, wealth 0.36->0.36
+      Relation now: allied
+
+  Wages West: wealth 0.36->0.19, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+  Wages East: wealth 11.76->11.26, mult 1.00->1.00, on_strike=False, unpaid_steps=0.0
+
+
+  West upkeep: food 1.71->0.00, wealth 0.19->0.19, wood 0.00->0.00, infra 0->0, pop 342->342, required_food 1.71
+  East upkeep: food 21.86->16.94, wealth 11.26->11.26, wood 1.78->1.78, infra 0->0, pop 985->1083, required_food 4.92
+
+------------------------------------------------------------
+
+Saved chronicle to C:\Users\micha\Documents\cmp400-emergent-culture\logs\demo_seed42_steps25.json
+Chronicle summary:
+  Events logged: 100
+  Action counts: {'mixed_allocation': 50}
+  East pop -> min 110.0, mean 432.7, max 1083.5
+  West pop -> min 110.0, mean 271.4, max 407.3
+  East food -> min 3.0, mean 8.7, max 17.1
+  West food -> min 0.0, mean 0.7, max 2.8
+(.venv) PS C:\Users\micha\Documents\cmp400-emergent-culture>

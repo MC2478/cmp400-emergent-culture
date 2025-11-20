@@ -8,11 +8,11 @@ STARTING_POPULATION: int = 100
 STARTING_INFRASTRUCTURE_LEVEL: int = 0
 
 # Territory-specific yields per work point
-EAST_FOOD_YIELD: float = 1.5
+EAST_FOOD_YIELD: float = 2.0
 EAST_WEALTH_YIELD: float = 0.5
 EAST_WOOD_YIELD: float = 1.0
 
-WEST_FOOD_YIELD: float = 0.5
+WEST_FOOD_YIELD: float = 1.0
 WEST_WEALTH_YIELD: float = 1.5
 WEST_WOOD_YIELD: float = 1.0
 
@@ -33,7 +33,7 @@ INFRA_COST_WOOD: float = 5.0
 INFRA_COST_WEALTH: float = 2.0
 
 # Population and upkeep
-PEOPLE_PER_WORK_POINT: int = 100
+PEOPLE_PER_WORK_POINT: int = 200
 # New percentage-based knobs
 FOOD_PER_10_POP: float = 0.05
 POP_GROWTH_RATE: float = 0.10
@@ -44,11 +44,16 @@ FOOD_SAFETY_HORIZON_STEPS: int = 3
 FOOD_SAFETY_GOOD_RATIO: float = 1.2
 NON_FOOD_MIN_FRACTION: float = 0.2
 
+# --- Leader memory / history ---
+# I cap within-run memory per leader so prompts stay short but still reflect recent outcomes.
+MAX_LEADER_MEMORY_EVENTS: int = 30
+
 # Wages and morale
 WAGE_PER_WORKER: float = 0.1
-STRIKE_THRESHOLD_STEPS: int = 2
-STRIKE_MULTIPLIER: float = 0.25
-LOW_MORALE_MULTIPLIER: float = 0.7
+STRIKE_THRESHOLD_STEPS: int = 4
+STRIKE_MULTIPLIER: float = 0.5
+LOW_MORALE_MULTIPLIER: float = 0.9
+PARTIAL_PAY_RECOVERY: float = 0.5
 
 # --- Rounding / display ---
 POP_DISPLAY_DECIMALS: int = 0

@@ -4,7 +4,7 @@ leader alternates between deterministic rules and LLM-backed decisions."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import mesa
 
@@ -22,17 +22,13 @@ from config import (
     FOOD_SAFETY_HORIZON_STEPS,
     FOOD_SAFETY_GOOD_RATIO,
     NON_FOOD_MIN_FRACTION,
+    MAX_LEADER_MEMORY_EVENTS,
 )
-from src.model.llm_client import LLMDecisionClient
+from src.model.llm_client import LLMDecisionClient, summarise_memory_for_prompt
 
 # I centralise the rule set here so both the LLM and rule-based flows share the same vocabulary.
-ALLOWED_ACTIONS: set[str] = {
-    "focus_food",
-    "focus_wood",
-    "focus_wealth",
-    "build_infrastructure",
-    "wait",
-}
+WORK_ACTIONS: set[str] = {"focus_food", "focus_wood", "focus_wealth"}
+ALLOWED_ACTIONS: set[str] = set(WORK_ACTIONS) | {"build_infrastructure", "wait"}
 
 
 @dataclass
@@ -78,11 +74,17 @@ class LeaderAgent(mesa.Agent):
         # I remember the previous decision for logging and inspection.
         self.last_action: Optional[str] = None
         self.last_reason: Optional[str] = None
+        # I keep a bounded in-run memory of outcomes so the LLM can adapt mid-simulation.
+        self.memory_events: List[Dict[str, Any]] = []
+        self.max_memory_events = MAX_LEADER_MEMORY_EVENTS
+        self.next_directive: str = "Stabilise food and explore opportunities."
+        self.interaction_log: List[str] = []
+        self.max_interactions: int = 8
 
-    def _work_points(self) -> int:
-        """I convert population into coarse work points (100 people = 1 work point)."""
-        base = max(0, self.territory.population // PEOPLE_PER_WORK_POINT)
-        return int(base * max(0.0, self.territory.effective_work_multiplier))
+    def _work_points(self) -> float:
+        """I convert population into fractional work points so even small populations can contribute."""
+        base = max(0.0, self.territory.population / PEOPLE_PER_WORK_POINT)
+        return base * max(0.0, self.territory.effective_work_multiplier)
 
     def _required_food(self) -> float:
         """I compute the granular food requirement using the shared config."""
@@ -167,6 +169,8 @@ class LeaderAgent(mesa.Agent):
             "current_season": self.model.current_season(),
             "next_season": self.model.next_season(),
             "step": self.model.steps,
+            "self_directive": self.next_directive,
+            "interaction_text": "\n".join(self.interaction_log[-5:]) if self.interaction_log else "No notable interactions recorded.",
         }
         if self.neighbor is not None:
             state.update(
@@ -188,22 +192,74 @@ class LeaderAgent(mesa.Agent):
                     "neighbor_wood": None,
                 }
             )
+        state["history_text"] = summarise_memory_for_prompt(self.memory_events)
         return state
+
+    def record_step_outcome(
+        self,
+        *,
+        step: int,
+        action: str,
+        food_before: float,
+        food_after: float,
+        wealth_before: float,
+        wealth_after: float,
+        pop_before: float,
+        pop_after: float,
+        starving: bool,
+        strike: bool,
+        note: str | None = None,
+    ) -> None:
+        """I store a structured in-run memory event for later prompt summaries."""
+        event: Dict[str, Any] = {
+            "step": step,
+            "action": action,
+            "food_before": food_before,
+            "food_after": food_after,
+            "wealth_before": wealth_before,
+            "wealth_after": wealth_after,
+            "pop_before": pop_before,
+            "pop_after": pop_after,
+            "starving": starving,
+            "strike": strike,
+        }
+        if note:
+            event["note"] = note
+
+        self.memory_events.append(event)
+        if len(self.memory_events) > self.max_memory_events:
+            self.memory_events.pop(0)
+
+    def record_interaction(self, summary: str) -> None:
+        """I keep a short log of notable diplomatic interactions."""
+        summary = (summary or "").strip()
+        if not summary:
+            return
+        self.interaction_log.append(summary)
+        if len(self.interaction_log) > self.max_interactions:
+            self.interaction_log.pop(0)
 
     def _fallback_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """I choose a simple action when the LLM response is unusable."""
         hint = state.get("priority_hint", {})
         ratio = hint.get("food_safety_ratio", 0.0)
         infra_level = state.get("infra", 0)
+        plan: Dict[str, float] = {}
+        build_flag = False
         if ratio < 1.0:
-            action = "focus_food"
+            plan["focus_food"] = 1.0
         elif infra_level < 3 and self.territory.wood >= INFRA_COST_WOOD and self.territory.wealth >= INFRA_COST_WEALTH:
-            action = "build_infrastructure"
+            build_flag = True
         elif ratio < FOOD_SAFETY_GOOD_RATIO:
-            action = "focus_food"
+            plan["focus_food"] = 1.0
         else:
-            action = "focus_wealth"
-        return {"action": action, "target": "None", "reason": "Fallback heuristic decision."}
+            plan["focus_wealth"] = 1.0
+        return {
+            "allocations": plan,
+            "build_infrastructure": build_flag,
+            "reason": "Fallback heuristic decision.",
+            "next_prompt": "Stabilise essentials and revisit infrastructure readiness.",
+        }
 
     def decide_rule_based(self) -> Dict[str, Any]:
         """I fall back to the heuristic action when the LLM output is invalid."""
@@ -211,10 +267,25 @@ class LeaderAgent(mesa.Agent):
 
     def apply_action(self, decision: Dict[str, Any]) -> None:
         """I mutate the territory state according to the chosen action."""
-        action = (decision.get("action") or "wait").lower()
-        if action not in ALLOWED_ACTIONS:
-            decision = self._fallback_action(self._state_dict())
-            action = decision["action"]
+        allocations_raw = decision.get("allocations") or {}
+        sanitized: Dict[str, float] = {}
+        if isinstance(allocations_raw, dict):
+            for key, value in allocations_raw.items():
+                if key not in WORK_ACTIONS:
+                    continue
+                try:
+                    share = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if share <= 0:
+                    continue
+                sanitized[key] = share
+        total_share = sum(sanitized.values())
+        if total_share > 1.0 and total_share > 0:
+            sanitized = {k: v / total_share for k, v in sanitized.items()}
+        legacy_action = (decision.get("legacy_action") or decision.get("action") or "").lower()
+        if not sanitized and legacy_action in WORK_ACTIONS:
+            sanitized = {legacy_action: 1.0}
 
         work_points = self._work_points()
         yields = self._effective_yields()
@@ -224,28 +295,60 @@ class LeaderAgent(mesa.Agent):
         wood_yield = yields["wood_per_work"] * season_mult
         wealth_yield = yields["wealth_per_work"]
 
-        if action == "build_infrastructure":
+        produced: Dict[str, float] = {"focus_food": 0.0, "focus_wood": 0.0, "focus_wealth": 0.0}
+        for key, share in sanitized.items():
+            share = max(0.0, min(1.0, share))
+            if share == 0.0:
+                continue
+            if key == "focus_food":
+                delta = work_points * share * food_yield
+                self.territory.food += delta
+                produced[key] += delta
+            elif key == "focus_wood":
+                delta = work_points * share * wood_yield
+                self.territory.wood += delta
+                produced[key] += delta
+            elif key == "focus_wealth":
+                delta = work_points * share * wealth_yield
+                self.territory.wealth += delta
+                produced[key] += delta
+
+        decision["applied_allocations"] = {k: v for k, v in sanitized.items() if v > 0}
+
+        wants_build = bool(decision.get("build_infrastructure"))
+        action_label = "mixed_allocation" if sanitized else (legacy_action or "wait")
+        if wants_build or action_label == "build_infrastructure":
+            wood_available = self.territory.wood
+            wealth_available = self.territory.wealth
             can_build = (
-                self.territory.wood >= INFRA_COST_WOOD
-                and self.territory.wealth >= INFRA_COST_WEALTH
+                wood_available >= INFRA_COST_WOOD
+                and wealth_available >= INFRA_COST_WEALTH
             )
             if can_build:
                 self.territory.wood -= INFRA_COST_WOOD
                 self.territory.wealth -= INFRA_COST_WEALTH
                 self.territory.infrastructure_level += 1
+                decision["infrastructure_built"] = True
             else:
-                action = "wait"
-                decision["reason"] = "Could not afford infrastructure; idling."
-        elif action == "focus_food":
-            self.territory.food += work_points * food_yield
-        elif action == "focus_wood":
-            self.territory.wood += work_points * wood_yield
-        elif action == "focus_wealth":
-            self.territory.wealth += work_points * wealth_yield
-        elif action == "wait":
-            pass
+                shortfalls: list[str] = []
+                if wood_available < INFRA_COST_WOOD:
+                    shortfalls.append(f"wood {wood_available:.2f}/{INFRA_COST_WOOD:.2f}")
+                if wealth_available < INFRA_COST_WEALTH:
+                    shortfalls.append(f"wealth {wealth_available:.2f}/{INFRA_COST_WEALTH:.2f}")
+                shortage_text = ", ".join(shortfalls) if shortfalls else "insufficient resources"
+                decision["reason"] = (
+                    f"Attempted build_infrastructure but lacked {shortage_text}; idling."
+                )
+                decision["infrastructure_built"] = False
+        else:
+            decision["infrastructure_built"] = False
 
-        self.last_action = action
+        if not sanitized and not wants_build and action_label == "wait":
+            # No production occurred; ensure we log explicitly.
+            decision.setdefault("reason", "No productive allocation this step.")
+
+        decision["action"] = action_label
+        self.last_action = action_label
         self.last_reason = decision.get("reason", "no reason provided")
 
     def step(self) -> None:
@@ -282,19 +385,28 @@ class LeaderAgent(mesa.Agent):
 
         invalid_llm = True
         if isinstance(decision, dict):
+            allocations = decision.get("allocations")
+            has_allocations = isinstance(allocations, dict) and any(
+                isinstance(v, (int, float)) and v > 0 for v in allocations.values()
+            )
+            build_flag = bool(decision.get("build_infrastructure"))
+            legacy_action = decision.get("legacy_action")
+            legacy_valid = isinstance(legacy_action, str) and legacy_action.lower() in ALLOWED_ACTIONS
             action_value = decision.get("action")
-            if isinstance(action_value, str):
-                normalized = action_value.lower()
-                if normalized in ALLOWED_ACTIONS:
-                    decision["action"] = normalized
-                    invalid_llm = False
-                    llm_used = True
+            action_valid = isinstance(action_value, str) and action_value.lower() in ALLOWED_ACTIONS
+            if has_allocations or build_flag or legacy_valid or action_valid:
+                invalid_llm = False
+                llm_used = True
 
         if invalid_llm:
             if decision is not None:
                 print("[INFO] LLM produced an invalid action, so I am using the heuristic policy instead.")
             decision = self._fallback_action(state_payload)
             llm_used = False
+
+        directive = decision.get("next_prompt")
+        if isinstance(directive, str) and directive.strip():
+            self.next_directive = directive.strip()
 
         # I enact the decision and ask the model to log the outcome.
         self.apply_action(decision)
