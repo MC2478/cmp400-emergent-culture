@@ -9,14 +9,7 @@ from typing import Any, Dict, List, Optional
 import mesa
 
 from config import (
-    PEOPLE_PER_WORK_POINT,
     FOOD_PER_10_POP,
-    FOOD_PER_WORK_BASE,
-    WOOD_PER_WORK_BASE,
-    WEALTH_PER_WORK_BASE,
-    INFRA_FOOD_YIELD_MULT_PER_LEVEL,
-    INFRA_WOOD_YIELD_MULT_PER_LEVEL,
-    INFRA_WEALTH_YIELD_MULT_PER_LEVEL,
     INFRA_COST_WOOD,
     INFRA_COST_WEALTH,
     FOOD_SAFETY_HORIZON_STEPS,
@@ -24,6 +17,7 @@ from config import (
     NON_FOOD_MIN_FRACTION,
     MAX_LEADER_MEMORY_EVENTS,
 )
+from src.agents.production import apply_allocations, effective_yields as compute_yields, work_points as compute_work_points
 from src.model.llm_client import LLMDecisionClient, summarise_memory_for_prompt
 
 # I centralise the rule set here so both the LLM and rule-based flows share the same vocabulary.
@@ -81,26 +75,9 @@ class LeaderAgent(mesa.Agent):
         self.interaction_log: List[str] = []
         self.max_interactions: int = 8
 
-    def _work_points(self) -> float:
-        """I convert population into fractional work points so even small populations can contribute."""
-        base = max(0.0, self.territory.population / PEOPLE_PER_WORK_POINT)
-        return base * max(0.0, self.territory.effective_work_multiplier)
-
     def _required_food(self) -> float:
         """I compute the granular food requirement using the shared config."""
         return max(0.0, (self.territory.population / 10.0) * FOOD_PER_10_POP)
-
-    def _effective_yields(self) -> Dict[str, float]:
-        """I report yields per work point after infrastructure bonuses."""
-        level = self.territory.infrastructure_level
-        food_mult = 1.0 + level * INFRA_FOOD_YIELD_MULT_PER_LEVEL
-        wood_mult = 1.0 + level * INFRA_WOOD_YIELD_MULT_PER_LEVEL
-        wealth_mult = 1.0 + level * INFRA_WEALTH_YIELD_MULT_PER_LEVEL
-        return {
-            "food_per_work": self.territory.food_yield * FOOD_PER_WORK_BASE * food_mult,
-            "wood_per_work": self.territory.wood_yield * WOOD_PER_WORK_BASE * wood_mult,
-            "wealth_per_work": self.territory.wealth_yield * WEALTH_PER_WORK_BASE * wealth_mult,
-        }
 
     def _priority_hint(self) -> Dict[str, Any]:
         """I provide a soft suggestion about where to focus."""
@@ -135,7 +112,7 @@ class LeaderAgent(mesa.Agent):
             "relation_score": self.territory.relation_score,
             "population": self.territory.population,
             "required_food": required_food,
-            "work_points": self._work_points(),
+            "work_points": compute_work_points(self.territory),
             "infrastructure_level": self.territory.infrastructure_level,
             "effective_work_multiplier": self.territory.effective_work_multiplier,
             "unpaid_steps": self.territory.unpaid_steps,
@@ -148,9 +125,9 @@ class LeaderAgent(mesa.Agent):
 
     def _state_dict(self) -> Dict[str, Any]:
         """I convert the territory and timestep into a JSON-friendly dict."""
-        work_points = self._work_points()
+        work_points = compute_work_points(self.territory)
         required_food = self._required_food()
-        yields = self._effective_yields()
+        yields = compute_yields(self.territory)
         priority_hint = self._priority_hint()
         state = {
             "territory": self.territory.name,
@@ -287,31 +264,8 @@ class LeaderAgent(mesa.Agent):
         if not sanitized and legacy_action in WORK_ACTIONS:
             sanitized = {legacy_action: 1.0}
 
-        work_points = self._work_points()
-        yields = self._effective_yields()
         season = self.model.current_season()
-        season_mult = self.model.season_multipliers.get(season, 1.0)
-        food_yield = yields["food_per_work"] * season_mult
-        wood_yield = yields["wood_per_work"] * season_mult
-        wealth_yield = yields["wealth_per_work"]
-
-        produced: Dict[str, float] = {"focus_food": 0.0, "focus_wood": 0.0, "focus_wealth": 0.0}
-        for key, share in sanitized.items():
-            share = max(0.0, min(1.0, share))
-            if share == 0.0:
-                continue
-            if key == "focus_food":
-                delta = work_points * share * food_yield
-                self.territory.food += delta
-                produced[key] += delta
-            elif key == "focus_wood":
-                delta = work_points * share * wood_yield
-                self.territory.wood += delta
-                produced[key] += delta
-            elif key == "focus_wealth":
-                delta = work_points * share * wealth_yield
-                self.territory.wealth += delta
-                produced[key] += delta
+        produced = apply_allocations(self.territory, sanitized, season, self.model.season_multipliers)
 
         decision["applied_allocations"] = {k: v for k, v in sanitized.items() if v > 0}
 

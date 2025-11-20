@@ -1,0 +1,204 @@
+"""Logging helpers extracted from world_model.py for chronicle writing and console summaries."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+import config
+
+
+def fmt_res(value: Any) -> str:
+    """Format resource numbers with configured precision."""
+    try:
+        return f"{float(value):.{config.RESOURCE_DISPLAY_DECIMALS}f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def fmt_pop(value: Any) -> str:
+    """Format population counts with configured precision."""
+    try:
+        decimals = max(0, int(config.POP_DISPLAY_DECIMALS))
+        return f"{float(value):.{decimals}f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def append_chronicle_action(chronicle: List[Dict[str, Any]], step: int, territory_name: str, data: Dict[str, Any]) -> None:
+    decision = data.get("decision", {})
+    before = decision.get("before", {})
+    after = decision.get("after", {})
+    meta = decision.get("decision", {})
+    entry = {
+        "event_type": "action",
+        "step": step,
+        "territory": territory_name,
+        "actor": territory_name,
+        "action": meta.get("action"),
+        "target": meta.get("target"),
+        "reason": meta.get("reason"),
+        "allocations": meta.get("applied_allocations") or meta.get("allocations"),
+        "build_infrastructure_requested": bool(meta.get("build_infrastructure")),
+        "infrastructure_built": meta.get("infrastructure_built"),
+        "food_before": before.get("food"),
+        "food_after": after.get("food"),
+        "wealth_before": before.get("wealth"),
+        "wealth_after": after.get("wealth"),
+        "wood_before": before.get("wood"),
+        "wood_after": after.get("wood"),
+        "infrastructure_before": before.get("infrastructure_level"),
+        "infrastructure_after": after.get("infrastructure_level"),
+        "population_before": before.get("population"),
+        "population_after": after.get("population"),
+        "llm_used": decision.get("used_llm"),
+        "relation_before": before.get("relation_to_neighbor"),
+        "relation_after": after.get("relation_to_neighbor"),
+        "neighbor_food_before": before.get("neighbor_food"),
+        "neighbor_food_after": after.get("neighbor_food"),
+        "neighbor_wealth_before": before.get("neighbor_wealth"),
+        "neighbor_wealth_after": after.get("neighbor_wealth"),
+        "neighbor_population_before": before.get("neighbor_population"),
+        "neighbor_population_after": after.get("neighbor_population"),
+        "neighbor_wood_before": before.get("neighbor_wood"),
+        "neighbor_wood_after": after.get("neighbor_wood"),
+    }
+    chronicle.append(entry)
+
+
+def append_chronicle_upkeep(
+    chronicle: List[Dict[str, Any]],
+    step: int,
+    east_before: Dict[str, Any],
+    east_after: Dict[str, Any],
+    west_before: Dict[str, Any],
+    west_after: Dict[str, Any],
+) -> None:
+    entry = {
+        "event_type": "upkeep",
+        "step": step,
+        "east": {
+            "food_before": east_before["food"],
+            "food_after": east_after["food"],
+            "population_before": east_before["population"],
+            "population_after": east_after["population"],
+            "wealth_before": east_before.get("wealth"),
+            "wealth_after": east_after.get("wealth"),
+            "wood_before": east_before.get("wood"),
+            "wood_after": east_after.get("wood"),
+            "infrastructure_before": east_before.get("infrastructure_level"),
+            "infrastructure_after": east_after.get("infrastructure_level"),
+        },
+        "west": {
+            "food_before": west_before["food"],
+            "food_after": west_after["food"],
+            "population_before": west_before["population"],
+            "population_after": west_after["population"],
+            "wealth_before": west_before.get("wealth"),
+            "wealth_after": west_after.get("wealth"),
+            "wood_before": west_before.get("wood"),
+            "wood_after": west_after.get("wood"),
+            "infrastructure_before": west_before.get("infrastructure_level"),
+            "infrastructure_after": west_after.get("infrastructure_level"),
+        },
+    }
+    chronicle.append(entry)
+
+
+def print_step_summary(
+    step: int,
+    current_step_log: Dict[str, Any],
+    chronicle: List[Dict[str, Any]],
+    season_multipliers: Dict[str, float],
+) -> None:
+    """Print a readable summary for the step and append actions to the chronicle."""
+    for territory in ["West", "East"]:
+        info = current_step_log.get(territory, {})
+        decision = info.get("decision", {})
+        if decision:
+            before = decision.get("before", {})
+            after = decision.get("after", {})
+            used_llm = "yes" if decision.get("used_llm") else "no"
+            meta = decision.get("decision", {})
+            reason = meta.get("reason", "no reason provided")
+            action = meta.get("action") or ("mixed_allocation" if meta.get("applied_allocations") else "wait")
+            allocations = meta.get("applied_allocations") or meta.get("allocations") or {}
+            allocation_line = ""
+            if allocations:
+                formatted_allocs = ", ".join(f"{k}:{float(v):.2f}" for k, v in allocations.items())
+                allocation_line = f"\n    - Work allocation: {formatted_allocs}"
+            infra_line = ""
+            if meta.get("build_infrastructure"):
+                status = "built" if meta.get("infrastructure_built") else "failed"
+                infra_line = f"\n    - Infrastructure attempt: {status}"
+            print(
+                f"  {territory}: action={action} (LLM: {used_llm})\n"
+                f"    - Reason: {reason}{allocation_line}{infra_line}\n"
+                f"    - Resources: food {fmt_res(before.get('food'))}->{fmt_res(after.get('food'))}, "
+                f"wealth {fmt_res(before.get('wealth'))}->{fmt_res(after.get('wealth'))}, "
+                f"wood {fmt_res(before.get('wood'))}->{fmt_res(after.get('wood'))}, "
+                f"infra {before.get('infrastructure_level')}->{after.get('infrastructure_level')}\n"
+                f"    - Population: {fmt_pop(before.get('population'))}"
+            )
+            append_chronicle_action(chronicle, step, territory, info)
+
+    negotiation_info = current_step_log.get("negotiation")
+    if negotiation_info:
+        entry = negotiation_info["entry"]
+        east_before = negotiation_info["east_before"]
+        east_after = negotiation_info["east_after"]
+        west_before = negotiation_info["west_before"]
+        west_after = negotiation_info["west_after"]
+        dialogue_lines = entry.get("dialogue") or []
+        if dialogue_lines:
+            formatted = [f"      {line['speaker']}: \"{line['line']}\"" for line in dialogue_lines]
+            dialogue_block = "\n" + "\n".join(formatted)
+        else:
+            dialogue_block = (
+                f"    East: \"{entry['east_line']}\"\n"
+                f"    West: \"{entry['west_line']}\""
+            )
+        print(
+            f"\n  Negotiation at step {step} ({entry.get('trade_type')}):\n"
+            f"{dialogue_block}\n"
+            f"    Trade flows -> food East->West {entry['trade']['food_from_east_to_west']}, "
+            f"wealth West->East {entry['trade']['wealth_from_west_to_east']}\n"
+            f"      East after trade: food {fmt_res(east_before['food'])}->{fmt_res(east_after['food'])}, "
+            f"wealth {fmt_res(east_before['wealth'])}->{fmt_res(east_after['wealth'])}\n"
+            f"      West after trade: food {fmt_res(west_before['food'])}->{fmt_res(west_after['food'])}, "
+            f"wealth {fmt_res(west_before['wealth'])}->{fmt_res(west_after['wealth'])}\n"
+            f"      Relation now: {entry.get('relation_label')}"
+        )
+
+    wage_lines: list[str] = []
+    for territory in ["West", "East"]:
+        wages = current_step_log.get(territory, {}).get("wages", {})
+        if wages:
+            before_w = wages.get("before", {})
+            after_w = wages.get("after", {})
+            wage_lines.append(
+                f"  Wages {territory}: wealth {fmt_res(before_w.get('wealth'))}->{fmt_res(after_w.get('wealth'))}, "
+                f"mult {fmt_res(before_w.get('multiplier'))}->{fmt_res(after_w.get('multiplier'))}, "
+                f"on_strike={after_w.get('on_strike')}, unpaid_steps={after_w.get('unpaid_steps')}"
+            )
+    if wage_lines:
+        print("")
+        print("\n".join(wage_lines))
+
+    print("")
+    for idx, territory in enumerate(["West", "East"]):
+        info = current_step_log.get(territory, {})
+        upkeep = info.get("upkeep", {})
+        if upkeep:
+            before_u = upkeep.get("before", {})
+            after_u = upkeep.get("after", {})
+            req = (before_u.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
+            prefix = "\n" if idx == 0 else ""
+            print(
+                f"{prefix}  {territory} upkeep: food {fmt_res(before_u.get('food'))}->{fmt_res(after_u.get('food'))}, "
+                f"wealth {fmt_res(before_u.get('wealth'))}->{fmt_res(after_u.get('wealth'))}, "
+                f"wood {fmt_res(before_u.get('wood'))}->{fmt_res(after_u.get('wood'))}, "
+                f"infra {before_u.get('infrastructure_level')}->{after_u.get('infrastructure_level')}, "
+                f"pop {fmt_pop(before_u.get('population'))}->{fmt_pop(after_u.get('population'))}, "
+                f"required_food {fmt_res(req)}"
+            )
+    print("\n" + "-" * 60 + "\n")
