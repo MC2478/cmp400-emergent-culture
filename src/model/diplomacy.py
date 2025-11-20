@@ -22,13 +22,14 @@ def relation_label(score: float) -> str:
     return "allied"
 
 
-def _sanitise_flow(trade: Dict[str, Any], key: str) -> int:
+def _sanitise_flow(trade: Dict[str, Any], key: str) -> float:
     value = trade.get(key, 0)
     try:
-        delta = int(value)
+        delta = float(value)
     except (ValueError, TypeError):
-        delta = 0
-    return max(-5, min(5, delta))
+        delta = 0.0
+    # I allow fractional flows so tiny gifts make it through, but still clamp extremes.
+    return max(-5.0, min(5.0, round(delta, 1)))
 
 
 def _safe_vec(vec: Dict[str, float] | None) -> Dict[str, float]:
@@ -61,15 +62,83 @@ def _relation_delta_with_personality(delta: float, east_vec: Dict[str, float], w
     return delta * ((east_mult + west_mult) / 2.0)
 
 
-def _update_exploitation_streak(trade_type: str, model: Any) -> None:
-    if trade_type.endswith("for_east"):
+def relation_stance(relation: str, personality: Dict[str, float]) -> str:
+    """I turn relation + personality into a light stance label for logging."""
+    vec = _safe_vec(personality)
+    coop = vec.get("cooperation", 0.5)
+    trust = vec.get("trust_in_others", 0.5)
+    aggression = vec.get("aggression", 0.5)
+    risk = vec.get("risk_tolerance", 0.5)
+    adaptability = vec.get("adaptability", 0.5)
+
+    if relation == "neutral":
+        if coop >= 0.6 and trust >= 0.55:
+            return "optimistic neutral"
+        if coop <= 0.4 and trust <= 0.4:
+            return "wary neutral"
+        return "guarded neutral"
+    if relation == "cordial":
+        if coop >= 0.6:
+            return "supportive"
+        if risk >= 0.6 or adaptability >= 0.6:
+            return "pragmatic partner"
+        return "cautiously cordial"
+    if relation == "allied":
+        if coop >= 0.6 and trust >= 0.55:
+            return "close ally"
+        if aggression >= 0.6:
+            return "tense alliance"
+        return "steady ally"
+    if relation == "strained":
+        return "uneasy"
+    if relation == "hostile":
+        return "openly hostile"
+    return relation
+
+
+def _is_tiny_gift(amount: float, donor_amount: float, donor_required: float) -> bool:
+    """I allow very small gifts while keeping donors above a minimum safety floor."""
+    if amount <= 0 or donor_amount <= 0:
+        return False
+    tiny_absolute = amount <= 0.1
+    tiny_relative = amount <= 0.05 * donor_amount
+    if not (tiny_absolute or tiny_relative):
+        return False
+    post_amount = donor_amount - amount
+    if donor_required <= 0:
+        return post_amount >= 0
+    post_ratio = post_amount / donor_required if donor_required > 0 else float("inf")
+    return post_ratio >= 0.8 and post_amount >= 0
+
+
+def _is_tiny_wealth_gift(amount: float, donor_amount: float) -> bool:
+    """I flag tiny wealth gifts so I can loosen clamps slightly without emptying coffers."""
+    if amount <= 0 or donor_amount <= 0:
+        return False
+    tiny_absolute = amount <= 0.1
+    tiny_relative = amount <= 0.05 * donor_amount
+    remaining = donor_amount - amount
+    return (tiny_absolute or tiny_relative) and remaining >= 0.5
+
+
+def _value_ratio_for_side(food_in: float, food_out: float, wealth_in: float, wealth_out: float) -> float:
+    """I approximate a value ratio so I can spot exploitative deals."""
+    value_in = food_in * 1.0 + wealth_in * 1.0
+    value_out = food_out * 1.0 + wealth_out * 1.0
+    if value_out < 1e-6:
+        return float("inf")
+    return value_in / value_out
+
+
+def _update_exploitation_streak(model: Any, east_exploited: bool, west_exploited: bool) -> None:
+    """I increment or reset streaks based on per-side exploitation flags."""
+    if east_exploited:
         model.east.exploitation_streak += 1
-        model.west.exploitation_streak = 0
-    elif trade_type.endswith("for_west"):
-        model.west.exploitation_streak += 1
-        model.east.exploitation_streak = 0
     else:
         model.east.exploitation_streak = 0
+    if west_exploited:
+        model.west.exploitation_streak += 1
+    else:
         model.west.exploitation_streak = 0
 
 
@@ -127,16 +196,18 @@ def run_negotiation(model: Any) -> None:
         "population": model.west.population,
     }
 
-    # Clamp flows to available resources.
+    # Clamp flows to available resources (allowing fractional gifts).
     if food_flow > 0:
-        food_flow = min(food_flow, int(model.east.food))
+        food_flow = min(food_flow, float(model.east.food))
     elif food_flow < 0:
-        food_flow = max(food_flow, -int(model.west.food))
+        food_flow = -min(abs(food_flow), float(model.west.food))
 
     if wealth_flow > 0:
-        wealth_flow = min(wealth_flow, int(model.west.wealth))
+        wealth_flow = min(wealth_flow, float(model.west.wealth))
+        if wealth_flow < 0:
+            wealth_flow = 0.0
     elif wealth_flow < 0:
-        wealth_flow = max(wealth_flow, -int(model.east.wealth))
+        wealth_flow = -min(abs(wealth_flow), float(model.east.wealth))
 
     def _food_safety(before: Dict[str, float]) -> tuple[float, float]:
         required = (before.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
@@ -145,36 +216,40 @@ def run_negotiation(model: Any) -> None:
 
     east_safety, east_required = _food_safety(east_before)
     west_safety, west_required = _food_safety(west_before)
+    east_tiny_food = food_flow > 0 and _is_tiny_gift(food_flow, east_before["food"], east_required)
+    west_tiny_food = food_flow < 0 and _is_tiny_gift(-food_flow, west_before["food"], west_required)
+    west_tiny_wealth = wealth_flow > 0 and _is_tiny_wealth_gift(wealth_flow, west_before["wealth"])
+    east_tiny_wealth = wealth_flow < 0 and _is_tiny_wealth_gift(-wealth_flow, east_before["wealth"])
 
     # Block uphill gifts when donor is not safer.
-    if food_flow > 0 and east_safety <= west_safety + 0.05:
+    if food_flow > 0 and east_safety <= west_safety + 0.05 and not east_tiny_food:
         food_flow = 0
-    if food_flow < 0 and west_safety <= east_safety + 0.05:
+    if food_flow < 0 and west_safety <= east_safety + 0.05 and not west_tiny_food:
         food_flow = 0
-    if wealth_flow > 0 and (model.west.wealth <= model.east.wealth or west_safety <= east_safety + 0.1):
+    if wealth_flow > 0 and (model.west.wealth <= model.east.wealth or west_safety <= east_safety + 0.1) and not west_tiny_wealth:
         wealth_flow = 0
-    if wealth_flow < 0 and (model.east.wealth <= model.west.wealth or east_safety <= west_safety + 0.1):
+    if wealth_flow < 0 and (model.east.wealth <= model.west.wealth or east_safety <= west_safety + 0.1) and not east_tiny_wealth:
         wealth_flow = 0
 
     # Only adjust direction if a non-zero trade was proposed (and not blocked above).
     if food_flow != 0 or wealth_flow != 0:
         if west_safety < 1.0 and east_safety >= 1.2 and food_flow <= 0:
-            desired = max(1, int(round(max(0.0, west_required - west_before["food"]))))
-            food_flow = min(desired, int(model.east.food))
+            desired = max(0.1, round(max(0.0, west_required - west_before["food"]), 1))
+            food_flow = min(desired, float(model.east.food))
         elif east_safety < 1.0 and west_safety >= 1.2 and food_flow >= 0:
-            desired = max(1, int(round(max(0.0, east_required - east_before["food"]))))
-            food_flow = -min(desired, int(model.west.food))
+            desired = max(0.1, round(max(0.0, east_required - east_before["food"]), 1))
+            food_flow = -min(desired, float(model.west.food))
 
     # Prevent wealth flowing from the poorer side to the richer one when the poorer side is food-insecure or clearly poorer.
     if wealth_flow > 0 and (
         (west_safety < 1.1 and model.west.wealth < model.east.wealth)
         or model.west.wealth < 0.8 * model.east.wealth
-    ):
+    ) and not west_tiny_wealth:
         wealth_flow = 0
     if wealth_flow < 0 and (
         (east_safety < 1.1 and model.east.wealth < model.west.wealth)
         or model.east.wealth < 0.8 * model.west.wealth
-    ):
+    ) and not east_tiny_wealth:
         wealth_flow = 0
 
     if food_flow > 0:
@@ -264,7 +339,28 @@ def run_negotiation(model: Any) -> None:
                 else:
                     trade_type = f"mildly_exploitative_for_{victim}"
 
-    _update_exploitation_streak(trade_type, model)
+    east_exploited = False
+    west_exploited = False
+    if not gift_classified:
+        east_food_in = max(-food_flow, 0.0)
+        east_food_out = max(food_flow, 0.0)
+        east_wealth_in = max(wealth_flow, 0.0)
+        east_wealth_out = max(-wealth_flow, 0.0)
+        west_food_in = max(food_flow, 0.0)
+        west_food_out = max(-food_flow, 0.0)
+        west_wealth_in = max(-wealth_flow, 0.0)
+        west_wealth_out = max(wealth_flow, 0.0)
+        east_ratio = _value_ratio_for_side(east_food_in, east_food_out, east_wealth_in, east_wealth_out)
+        west_ratio = _value_ratio_for_side(west_food_in, west_food_out, west_wealth_in, west_wealth_out)
+        east_exploited = east_ratio < 0.7 and (east_food_out + east_wealth_out) > eps
+        west_exploited = west_ratio < 0.7 and (west_food_out + west_wealth_out) > eps
+
+    if east_exploited and not trade_type.startswith("strongly_exploitative"):
+        trade_type = "mildly_exploitative_for_east"
+    if west_exploited and not trade_type.startswith("strongly_exploitative"):
+        trade_type = "mildly_exploitative_for_west"
+
+    _update_exploitation_streak(model, east_exploited, west_exploited)
 
     score_before = float(model.east.relation_score)
     base_delta = 0.0
@@ -327,9 +423,13 @@ def run_negotiation(model: Any) -> None:
         "trade_type": trade_type,
         "relation_score": score,
         "relation_label": new_label,
+        "east_stance": relation_stance(new_label, model.east.personality_vector),
+        "west_stance": relation_stance(new_label, model.west.personality_vector),
         "relation_delta": relation_delta_actual,
         "east_traits": list(model.east.active_traits),
         "west_traits": list(model.west.active_traits),
+        "east_exploited": east_exploited,
+        "west_exploited": west_exploited,
     }
     model.chronicle.append(entry)
     model.current_step_log["negotiation"] = {

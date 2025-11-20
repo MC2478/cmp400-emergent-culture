@@ -20,7 +20,7 @@ WEST_WOOD_YIELD: float = 1.0
 
 # Food/wood/wealth yield per work point before infra bonuses
 FOOD_PER_WORK_BASE: float = 1.0
-WOOD_PER_WORK_BASE: float = 1.0
+WOOD_PER_WORK_BASE: float = 1.1
 WEALTH_PER_WORK_BASE: float = 1.0
 
 # Multiplicative infra bonus per level
@@ -71,8 +71,8 @@ SEASON_MULTIPLIERS = {
 # Trait and personality tuning
 TRAIT_MAX_ACTIVE: int = 2
 TRAIT_ADAPTATION_ALPHA: float = 0.7
-TRAIT_COOLDOWN_STEPS: int = 10
-TRAIT_CHANGE_PRESSURE_THRESHOLD: int = 3
+TRAIT_COOLDOWN_STEPS: int = 5
+TRAIT_CHANGE_PRESSURE_THRESHOLD: int = 2
 TRAIT_SOFT_ADJUST_DELTA: float = 0.1
 TRAIT_NEUTRAL_VALUE: float = 0.5
 

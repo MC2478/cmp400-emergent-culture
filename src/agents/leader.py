@@ -22,6 +22,7 @@ from src.model.llm_client import LLMDecisionClient, summarise_memory_for_prompt
 from src.model.traits import (
     adaptation_pressure_text,
     apply_trait_actions,
+    apply_pressure_adaptation,
     interpret_trait_adjustment,
     neutral_personality_vector,
     tick_trait_cooldown,
@@ -59,6 +60,11 @@ class TerritoryState:
     other_trait_notes: str = "No clear read on the neighbour yet."
     exploitation_streak: int = 0
     starvation_streak: int = 0
+    failed_strategy_streak: int = 0
+    previous_allocations: Dict[str, float] = field(default_factory=dict)
+    last_applied_allocations: Dict[str, float] = field(default_factory=dict)
+    last_population_after: Optional[float] = None
+    last_wealth_after: Optional[float] = None
     adaptation_pressure_note: str = ""
 
 
@@ -134,6 +140,7 @@ class LeaderAgent(mesa.Agent):
             "effective_work_multiplier": self.territory.effective_work_multiplier,
             "unpaid_steps": self.territory.unpaid_steps,
             "on_strike": self.territory.on_strike,
+            "failed_strategy_streak": self.territory.failed_strategy_streak,
             "neighbor_food": neighbor.food if neighbor else None,
             "neighbor_wealth": neighbor.wealth if neighbor else None,
             "neighbor_population": neighbor.population if neighbor else None,
@@ -143,6 +150,7 @@ class LeaderAgent(mesa.Agent):
             "trait_cooldown_steps": self.territory.trait_cooldown_steps,
             "exploitation_streak": self.territory.exploitation_streak,
             "starvation_streak": self.territory.starvation_streak,
+            "failed_strategy_streak": self.territory.failed_strategy_streak,
             "other_trait_notes": self.territory.other_trait_notes,
         }
 
@@ -177,6 +185,7 @@ class LeaderAgent(mesa.Agent):
             "active_traits": list(self.territory.active_traits),
             "trait_cooldown_steps": self.territory.trait_cooldown_steps,
             "other_trait_notes": self.territory.other_trait_notes,
+            "failed_strategy_streak": self.territory.failed_strategy_streak,
             "adaptation_pressure": self.territory.adaptation_pressure_note,
         }
         if self.neighbor is not None:
@@ -254,6 +263,7 @@ class LeaderAgent(mesa.Agent):
             "trait_cooldown_steps": self.territory.trait_cooldown_steps,
             "exploitation_streak": self.territory.exploitation_streak,
             "starvation_streak": self.territory.starvation_streak,
+            "failed_strategy_streak": self.territory.failed_strategy_streak,
             "other_trait_notes": self.territory.other_trait_notes,
             "trait_events": list(self.territory.trait_events),
             "adaptation_pressure": self.territory.adaptation_pressure_note,
@@ -268,8 +278,16 @@ class LeaderAgent(mesa.Agent):
         build_flag = False
         if ratio < 1.0:
             plan["focus_food"] = 1.0
-        elif infra_level < 3 and self.territory.wood >= INFRA_COST_WOOD and self.territory.wealth >= INFRA_COST_WEALTH:
+        elif (
+            ratio >= FOOD_SAFETY_GOOD_RATIO
+            and infra_level < 2
+            and self.territory.wood >= INFRA_COST_WOOD
+            and self.territory.wealth >= INFRA_COST_WEALTH
+        ):
             build_flag = True
+        elif ratio >= FOOD_SAFETY_GOOD_RATIO and infra_level < 2:
+            plan["focus_wood"] = 0.6
+            plan["focus_wealth"] = 0.4
         elif ratio < FOOD_SAFETY_GOOD_RATIO:
             plan["focus_food"] = 1.0
         else:
@@ -310,6 +328,9 @@ class LeaderAgent(mesa.Agent):
 
         season = self.model.current_season()
         produced = apply_allocations(self.territory, sanitized, season, self.model.season_multipliers)
+        # I stash the final allocation mix so I can detect repeated strategies later.
+        self.territory.previous_allocations = dict(self.territory.last_applied_allocations)
+        self.territory.last_applied_allocations = dict(sanitized)
 
         decision["applied_allocations"] = {k: v for k, v in sanitized.items() if v > 0}
 
@@ -352,7 +373,15 @@ class LeaderAgent(mesa.Agent):
     def step(self) -> None:
         """I choose an action (LLM preferred) and then execute and log it."""
         tick_trait_cooldown(self.territory)
+        pressure_events = apply_pressure_adaptation(self.territory)
         self.territory.trait_events = []
+        if pressure_events:
+            # I fold pressure-driven adaptations into the trait events so they show up in logs.
+            self.territory.trait_events.extend(pressure_events)
+            for ev in pressure_events:
+                self.model.chronicle.append(
+                    {"event_type": "trait_event", "territory": self.territory.name, "step": self.model.steps, "details": ev}
+                )
         if self.territory.population <= 0:
             decision = {
                 "action": "wait",
@@ -438,3 +467,12 @@ class LeaderAgent(mesa.Agent):
         )
         if events:
             self.last_trait_adjustment = text or "applied actions"
+            for ev in events:
+                self.model.chronicle.append(
+                    {
+                        "event_type": "trait_event",
+                        "territory": self.territory.name,
+                        "step": ev.get("step", self.model.steps),
+                        "details": ev,
+                    }
+                )

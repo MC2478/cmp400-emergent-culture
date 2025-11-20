@@ -4,6 +4,7 @@ single-agent world, flip the LLM override on or off, and capture the chronicle f
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,9 @@ import sys
 
 import config
 from src.model.world_model import WorldModel
+
+_RUN_DIR: Path | None = None
+_RUN_KEY: tuple[int | None, int | None] = (None, None)
 
 
 @dataclass
@@ -28,7 +32,7 @@ class RunConfig:
 
     def chronicle_path(self) -> Path:
         """I standardise the log file name so I can reference runs in my feasibility write-up."""
-        return Path("logs") / f"demo_seed{self.seed}_steps{self.steps}.json"
+        return _choose_run_artifact_path("demo", self.seed, self.steps, ".json")
 
 
 def run_demo(
@@ -162,15 +166,27 @@ class Tee:
 
 
 def _choose_run_artifact_path(prefix: str, seed: int, steps: int, ext: str) -> Path:
-    """I save run artifacts under logs/ and avoid clobbering previous runs."""
+    """I save run artifacts under a dated logs/ subfolder so the newest run is obvious."""
+    global _RUN_DIR, _RUN_KEY
     logs_dir = Path("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
-    base = logs_dir / f"{prefix}_seed{seed}_steps{steps}{ext}"
+    if _RUN_DIR is None or _RUN_KEY != (seed, steps):
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        candidate = logs_dir / f"run_{stamp}_seed{seed}_steps{steps}"
+        suffix = 1
+        while candidate.exists():
+            suffix += 1
+            candidate = logs_dir / f"run_{stamp}_seed{seed}_steps{steps}_v{suffix}"
+        candidate.mkdir(parents=True, exist_ok=True)
+        _RUN_DIR = candidate
+        _RUN_KEY = (seed, steps)
+        print(f"[info] Logging run artifacts under {_RUN_DIR}")
+    base = _RUN_DIR / f"{prefix}_seed{seed}_steps{steps}{ext}"
     if not base.exists():
         return base
     idx = 1
     while True:
-        candidate = logs_dir / f"{prefix}_seed{seed}_steps{steps}_run{idx}{ext}"
+        candidate = _RUN_DIR / f"{prefix}_seed{seed}_steps{steps}_run{idx}{ext}"
         if not candidate.exists():
             return candidate
         idx += 1

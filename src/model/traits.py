@@ -160,6 +160,8 @@ def add_trait_to_state(state: Any, trait_name: str, *, step: int | None = None, 
             active.remove(existing)
             removed.append(existing)
 
+    if len(active) >= config.TRAIT_MAX_ACTIVE and not removed:
+        return None
     if len(active) >= config.TRAIT_MAX_ACTIVE:
         removed.append(active.pop(0))
 
@@ -331,6 +333,104 @@ def personality_summary(personality: Dict[str, float], active_traits: Sequence[s
     return f"Personality: {vector_text}. Active traits: {trait_label}."
 
 
+def trait_gloss(personality: Dict[str, float], active_traits: Sequence[str]) -> str:
+    """I build a short behaviour gloss for logging based on traits + personality."""
+    vec = _with_defaults(personality)
+    bits: list[str] = []
+    if "Friendly" in active_traits:
+        bits.append("I lean toward cooperative or balanced trades")
+    if "Aggressive" in active_traits:
+        bits.append("I push hard for self-favouring outcomes")
+    if "Wealth-hoarder" in active_traits:
+        bits.append("I guard wealth and part with it only when buffers feel safe")
+    if "Food-secure" in active_traits:
+        bits.append("I protect food reserves before anything else")
+    if "Opportunistic" in active_traits:
+        bits.append("I pivot quickly when leverage appears")
+    if "Isolationist" in active_traits:
+        bits.append("I prefer minimal engagement unless benefits are clear")
+
+    if not bits:
+        if vec.get("cooperation", 0.5) >= 0.6 and vec.get("trust_in_others", 0.5) >= 0.55:
+            bits.append("I value cooperation when it helps my people")
+        if vec.get("aggression", 0.5) >= 0.65:
+            bits.append("I will press advantages assertively")
+        if vec.get("wealth_focus", 0.5) >= 0.6:
+            bits.append("I like building a wealth cushion before giving it away")
+        if vec.get("food_focus", 0.5) >= 0.6:
+            bits.append("I put food stability first")
+
+    if not bits:
+        return "I stay pragmatic and shift based on recent results"
+    lead = bits[0]
+    tail = ", ".join(bits[1:]) if len(bits) > 1 else ""
+    return f"{lead}" + (f"; {tail}" if tail else "")
+
+
+def apply_pressure_adaptation(state: Any) -> List[Dict[str, Any]]:
+    """I convert pressure streaks into automatic trait/personality shifts when cooldown allows."""
+    events: list[Dict[str, Any]] = []
+    threshold = config.TRAIT_CHANGE_PRESSURE_THRESHOLD
+    if getattr(state, "trait_cooldown_steps", 0) > 0:
+        return events
+    active: list[str] = list(getattr(state, "active_traits", []))
+    exploitation_hits = getattr(state, "exploitation_streak", 0) >= threshold
+    starvation_hits = getattr(state, "starvation_streak", 0) >= threshold
+    stagnation_hits = getattr(state, "failed_strategy_streak", 0) >= threshold
+
+    if exploitation_hits:
+        if "Friendly" in active:
+            ev = remove_trait_from_state(state, "Friendly", step=None, reason="pressure: repeated exploitation")
+            if ev:
+                events.append(ev)
+        if "Opportunistic" not in active and "Isolationist" not in active:
+            ev = add_trait_to_state(state, "Opportunistic", step=None, reason="pressure: repeated exploitation")
+            if ev:
+                events.append(ev)
+        ev = nudge_personality(state, "cooperation", -0.1, step=None, reason="pressure: guard against exploitation")
+        if ev:
+            events.append(ev)
+        ev = nudge_personality(state, "trust_in_others", -0.1, step=None, reason="pressure: guard against exploitation")
+        if ev:
+            events.append(ev)
+        ev = nudge_personality(state, "aggression", 0.1, step=None, reason="pressure: assert after exploitation")
+        if ev:
+            events.append(ev)
+        state.exploitation_streak = 0
+
+    if starvation_hits:
+        if "Wealth-hoarder" in active:
+            ev = remove_trait_from_state(state, "Wealth-hoarder", step=None, reason="pressure: starvation")
+            if ev:
+                events.append(ev)
+        if "Food-secure" not in active:
+            ev = add_trait_to_state(state, "Food-secure", step=None, reason="pressure: starvation")
+            if ev:
+                events.append(ev)
+        ev = nudge_personality(state, "food_focus", 0.15, step=None, reason="pressure: starvation")
+        if ev:
+            events.append(ev)
+        ev = nudge_personality(state, "wealth_focus", -0.1, step=None, reason="pressure: starvation")
+        if ev:
+            events.append(ev)
+        ev = nudge_personality(state, "risk_tolerance", -0.1, step=None, reason="pressure: starvation")
+        if ev:
+            events.append(ev)
+        state.starvation_streak = 0
+
+    if stagnation_hits:
+        if "Opportunistic" not in active:
+            ev = add_trait_to_state(state, "Opportunistic", step=None, reason="pressure: stagnation")
+            if ev:
+                events.append(ev)
+        ev = nudge_personality(state, "adaptability", 0.1, step=None, reason="pressure: stagnation")
+        if ev:
+            events.append(ev)
+        state.failed_strategy_streak = 0
+
+    return events
+
+
 NEGOTIATION_STYLE_HINTS: Dict[str, str] = {
     "Aggressive": "You are comfortable proposing one-sided deals but remember pushing too hard can sour relations.",
     "Friendly": "You prefer balanced trades and may offer slight generosity to build long-term cooperation.",
@@ -356,7 +456,10 @@ def adaptation_pressure_text(state: Any) -> str:
         pressure_parts.append(f"Repeated exploitative trades ({state.exploitation_streak}) are hurting you.")
     if getattr(state, "starvation_streak", 0) >= config.TRAIT_CHANGE_PRESSURE_THRESHOLD:
         pressure_parts.append(f"Food has been unsafe for {state.starvation_streak} steps.")
-    if pressure_parts and getattr(state, "trait_cooldown_steps", 0) == 0:
+    if getattr(state, "failed_strategy_streak", 0) >= config.TRAIT_CHANGE_PRESSURE_THRESHOLD:
+        pressure_parts.append(f"Repeating similar allocations without gains ({state.failed_strategy_streak}) signals stagnation.")
+    cooldown = getattr(state, "trait_cooldown_steps", 0)
+    if pressure_parts and cooldown == 0:
         return "Recent outcomes suggest your approach is faltering: " + " ".join(pressure_parts)
     return ""
 

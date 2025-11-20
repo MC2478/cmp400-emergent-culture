@@ -15,7 +15,7 @@ from src.model.environment import EnvironmentSnapshot, generate_environment
 from src.model.economy import apply_population_dynamics, apply_wages
 from src.model.llm_client import LLMDecisionClient, LLMConfig
 from src.model.log_utils import append_chronicle_upkeep, print_step_summary
-from src.model.traits import add_trait_to_state, sample_starting_trait
+from src.model.traits import adaptation_pressure_text, add_trait_to_state, sample_starting_trait
 
 
 class WorldModel(mesa.Model):
@@ -294,6 +294,30 @@ class WorldModel(mesa.Model):
         _record(self.leader_east, east_before, east_after)
         _record(self.leader_west, west_before, west_after)
 
+    def _refresh_trait_state_for_logging(self) -> None:
+        """I update cached trait state so summaries show the latest pressure counters."""
+        for name, territory in (("East", self.east), ("West", self.west)):
+            decision_wrap = self.current_step_log.get(name, {}).get("decision")
+            if not decision_wrap:
+                continue
+            meta = decision_wrap.get("decision", {})
+            trait_state = meta.get("trait_state", {}) or {}
+            territory.adaptation_pressure_note = adaptation_pressure_text(territory)
+            trait_state.update(
+                {
+                    "active_traits": list(territory.active_traits),
+                    "personality_vector": dict(territory.personality_vector),
+                    "trait_cooldown_steps": territory.trait_cooldown_steps,
+                    "exploitation_streak": territory.exploitation_streak,
+                    "starvation_streak": territory.starvation_streak,
+                    "failed_strategy_streak": territory.failed_strategy_streak,
+                    "adaptation_pressure": territory.adaptation_pressure_note,
+                    "trait_events": list(territory.trait_events),
+                }
+            )
+            meta["trait_state"] = trait_state
+            decision_wrap["decision"] = meta
+
     def step(self) -> None:
         """Advance the Mesa scheduler one tick so leader agents can act."""
         super().step()
@@ -357,6 +381,8 @@ class WorldModel(mesa.Model):
             "wood": self.west.wood,
             "infrastructure_level": self.west.infrastructure_level,
         }
+        self._update_strategy_pressure(self.east, pop_after=east_after["population"], wealth_after=east_after["wealth"])
+        self._update_strategy_pressure(self.west, pop_after=west_after["population"], wealth_after=west_after["wealth"])
         self.log_upkeep(east_before, east_after, west_before, west_after)
         self._record_leader_memories(
             east_before=east_before,
@@ -364,6 +390,7 @@ class WorldModel(mesa.Model):
             west_before=west_before,
             west_after=west_after,
         )
+        self._refresh_trait_state_for_logging()
         print_step_summary(self.steps, self.current_step_log, self.chronicle, self.season_multipliers)
 
     def all_territories_dead(self) -> bool:
@@ -385,3 +412,26 @@ class WorldModel(mesa.Model):
             territory.starvation_streak += 1
         else:
             territory.starvation_streak = 0
+
+    def _update_strategy_pressure(self, territory: TerritoryState, *, pop_after: float, wealth_after: float) -> None:
+        """I track whether repeating similar allocations without gains should raise stagnation pressure."""
+        prev_pop = territory.last_population_after
+        prev_wealth = territory.last_wealth_after
+        prev_allocs = getattr(territory, "previous_allocations", {}) or {}
+        current_allocs = getattr(territory, "last_applied_allocations", {}) or {}
+        diff_sum = 0.0
+        for key in ("focus_food", "focus_wood", "focus_wealth"):
+            diff_sum += abs(current_allocs.get(key, 0.0) - prev_allocs.get(key, 0.0))
+        similar_plan = bool(prev_allocs) and diff_sum < 0.1
+
+        if prev_pop is None or prev_wealth is None:
+            territory.failed_strategy_streak = 0
+        else:
+            no_gain = wealth_after <= prev_wealth + 1e-6 and pop_after <= prev_pop + 1e-6
+            if no_gain and similar_plan:
+                territory.failed_strategy_streak += 1
+            else:
+                territory.failed_strategy_streak = 0
+
+        territory.last_population_after = pop_after
+        territory.last_wealth_after = wealth_after

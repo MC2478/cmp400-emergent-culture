@@ -187,6 +187,7 @@ Trade rules:
   - Flows must match the final proposal and stay within each side's resources (positive food means East ships food to West; positive wealth means West sends wealth to East).
   - Do not propose aid that would leave the sender below roughly 1.5x their immediate food requirement.
   - If one side is more food-insecure, food should flow to them unless the dialogue explicitly refuses; avoid gifts from the poorer side to the richer side unless the dialogue shows tribute/exploitation.
+  - When it is reasonably safe, prefer a small non-zero trade (token gifts of ~0.1-0.2 or balanced swaps of similar value) instead of defaulting to zero. Balanced food-for-wealth trades are welcome when both sides remain safe.
   - Summary lines should reflect each leader's closing statement.
 """
         trade_data = self._negotiate_request(trade_prompt, max(384, self.config.max_tokens))

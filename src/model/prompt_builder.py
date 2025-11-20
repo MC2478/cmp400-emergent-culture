@@ -56,6 +56,18 @@ Resource feasibility snapshot (gap = have - need):
   - Wealth for infrastructure: need {config.INFRA_COST_WEALTH:.2f}, have {wealth:.2f}, gap {wealth_gap:.2f} ({_gap_status(wealth_gap)}).
   - Wage bill this step (~{wage_bill:.2f} wealth): gap {wage_gap:.2f} ({_gap_status(wage_gap)}).
 """
+    infra_ready = (
+        priority_hint.get("food_safety_ratio", 0.0) >= config.FOOD_SAFETY_GOOD_RATIO
+        and wood >= config.INFRA_COST_WOOD
+        and wealth >= config.INFRA_COST_WEALTH
+        and infra < 2
+    )
+    infra_prompt = ""
+    if infra_ready:
+        infra_prompt = (
+            f"You already meet the cost for an infrastructure upgrade (need wood {config.INFRA_COST_WOOD}, wealth {config.INFRA_COST_WEALTH}). "
+            "If your food safety looks comfortably above 1.0 for the next few steps, setting build_infrastructure:true this step can boost long-term yields."
+        )
 
     prompt = f"""
 You are the autonomous leader of the territory "{name}" at simulation step {step}.
@@ -68,10 +80,12 @@ Season outlook: current season="{current_season}" (food/wood yield x{current_sea
 Last self-set directive: "{prior_directive}"
 {personality_line}
 Belief about the other territory: {other_trait_notes}
-{"Adaptation pressure: " + adaptation_pressure if adaptation_pressure else ""}
+{"Adaptation pressure: " + adaptation_pressure if adaptation_pressure else "No acute adaptation pressure; still stay alert to repeating mistakes."}
+If adaptation pressure appears, treat it as a signal to adjust traits or strategy; explicitly propose a suitable "trait_adjustment" if you believe a mindset change would help.
+{infra_prompt}
 
 Work points available this step: {work_points} (roughly 100 population per work point adjusted by morale).
-Current diplomatic stance toward your neighbour: {relation} (score {relation_score}). Your primary duty is to your own citizens; cooperation or aid must be justified by trust (cordial/allied), reciprocity, or clear concessions—default to self-preservation if in doubt.
+Current diplomatic stance toward your neighbour: {relation} (score {relation_score}). Your duty is to your citizens, but you should weigh short-term safety against long-term benefits; small trades and infra investments are acceptable when the buffer looks solid and the upside is clear.
 
 Recent history of your decisions in this run:
 {history_text}
@@ -82,7 +96,8 @@ Pay attention to moments where past actions failed (e.g., infrastructure attempt
 Guiding prompts for priorities:
 - Self-preservation first: if food_safety_ratio < 1, focus on survival and seek help; if > 1.5, consider cautious investments.
 - Cooperation depends on relation + surplus: aid only when you retain a strong buffer and relations are cordial/allied, or when you receive clear benefit.
-- Neutral/strained: prefer reciprocal trades or no deal; hostile: protect your position and demand concessions.
+- Neutral/strained: prefer reciprocal trades; hostile: protect your position, but still consider fair exchanges if they improve resilience.
+- If food safety looks comfortable for the next few steps and you have enough wood and wealth to build infrastructure, setting build_infrastructure:true is often worth it to raise future yields instead of idling.
 
 Per-work yields with current infrastructure:
   - focus_food:  {yields.get('food_per_work', 0.0):.3f} food/work
@@ -95,8 +110,8 @@ Soft priority hint (you may override this):
 
 Before selecting an action, run this feasibility checklist:
   1. Ensure minimum food coverage for the next {config.FOOD_SAFETY_HORIZON_STEPS} steps (grow or trade if short).
-  2. Confirm wood ≥ {config.INFRA_COST_WOOD} if you intend to build infrastructure; otherwise gather wood first.
-  3. Confirm wealth ≥ {config.INFRA_COST_WEALTH} for infrastructure; if not, consider producing wealth.
+  2. Confirm wood >= {config.INFRA_COST_WOOD} if you intend to build infrastructure; otherwise gather wood first.
+  3. Confirm wealth >= {config.INFRA_COST_WEALTH} for infrastructure; if not, consider producing wealth.
   4. Cover this step's wage bill (~{wage_bill:.2f} wealth) or plan to raise wealth immediately to prevent morale collapse.
   5. Align choices with seasonal multipliers: push production during high-yield seasons and enter low-yield seasons with reserves ready.
   6. Use recent failures, relation shifts, and your stance toward the neighbour (hostile/strained/neutral/cordial/allied) to avoid repeating mistakes.
@@ -105,7 +120,7 @@ Work allocation options (splits can be uneven; tailor to current needs and seaso
   - "focus_food": grow food using the food_per_work yield.
   - "focus_wood": grow wood using the wood_per_work yield.
   - "focus_wealth": grow wealth using the wealth_per_work yield.
-You may split work freely across these options (shares between 0.0 and 1.0 that sum to ≤ 1.0). Uneven mixes like 0.6/0.3/0.1 are expected; avoid repeating identical 50/50 splits unless it truly fits the moment. Any unassigned share idles. If wood is scarce and infrastructure is still 0, consider a small wood share even when food is stable so you can build.
+You may split work freely across these options (shares between 0.0 and 1.0 that sum to <= 1.0). Uneven mixes like 0.6/0.3/0.1 are expected; avoid repeating identical 50/50 splits unless it truly fits the moment. Any unassigned share idles. If wood is scarce and infrastructure is still 0, consider a small wood share even when food is stable so you can build.
 Infrastructure option:
   - set "build_infrastructure": true to spend {config.INFRA_COST_WOOD} wood and {config.INFRA_COST_WEALTH} wealth immediately if available (in addition to your work allocations).
 
@@ -180,6 +195,6 @@ Recent interaction log for East:
 Recent interaction log for West:
 {west_interactions}
 
-There is no safety net—if a side starves it may collapse. Reason carefully about whether to take risks, extend aid, demand concessions, or hold steady.
+There is no safety net - if a side starves it may collapse. Weigh risk versus benefit: small non-zero trades are acceptable when buffers look safe (token gifts of 0.1-0.2 or balanced swaps like 0.1-0.2 food for similar wealth). Friendly leaders are happier to send tiny gifts or slight generosity; Wealth-hoarder only parts with wealth when buffers feel comfortable; Opportunistic may offer small trades to build leverage; Aggressive rarely gifts and prefers self-favouring deals; Isolationist often opts for no trade unless the benefit is clear. Balanced trades that exchange small food/wealth amounts are welcome when both sides stay safe.
 """
     return context

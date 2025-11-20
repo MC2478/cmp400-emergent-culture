@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import config
+from src.model.traits import trait_gloss
 
 
 def fmt_res(value: Any) -> str:
@@ -68,6 +69,7 @@ def append_chronicle_action(chronicle: List[Dict[str, Any]], step: int, territor
         "trait_cooldown_steps": trait_state.get("trait_cooldown_steps"),
         "exploitation_streak": trait_state.get("exploitation_streak"),
         "starvation_streak": trait_state.get("starvation_streak"),
+        "failed_strategy_streak": trait_state.get("failed_strategy_streak"),
         "other_trait_notes": trait_state.get("other_trait_notes"),
         "adaptation_pressure": trait_state.get("adaptation_pressure"),
         "trait_events": trait_state.get("trait_events") or meta.get("trait_events"),
@@ -146,17 +148,25 @@ def print_step_summary(
             trait_line = ""
             if trait_state:
                 active = trait_state.get("active_traits") or []
+                gloss = trait_gloss(trait_state.get("personality_vector") or {}, active)
                 cooldown = trait_state.get("trait_cooldown_steps", 0)
                 explo = trait_state.get("exploitation_streak", 0)
                 starve = trait_state.get("starvation_streak", 0)
+                stagnation = trait_state.get("failed_strategy_streak", 0)
                 trait_label = ", ".join(active) if active else "none"
-                trait_line = f"\n    - Traits: [{trait_label}] (cooldown {cooldown}, expl {explo}, starve {starve})"
+                trait_line = (
+                    f"\n    - Traits: [{trait_label}] - {gloss} (cooldown {cooldown})"
+                    f"\n      Pressures: exploitation={explo}, starvation={starve}, failed_strategy={stagnation}"
+                )
                 pressure = trait_state.get("adaptation_pressure")
                 if pressure:
                     trait_line += f"\n      pressure: {pressure}"
                 events = trait_state.get("trait_events") or meta.get("trait_events") or []
                 if events:
-                    summaries = "; ".join(f"{e.get('event')}:{e.get('trait') or e.get('dimension')}" for e in events)
+                    summaries = "; ".join(
+                        f"{e.get('event')}:{e.get('trait') or e.get('dimension')} ({e.get('reason', '').strip()})"
+                        for e in events
+                    )
                     trait_line += f"\n      trait_events: {summaries}"
             print(
                 f"  {territory}: action={action} (LLM: {used_llm})\n"
@@ -212,7 +222,8 @@ def print_step_summary(
             f"wealth {fmt_res(east_before['wealth'])}->{fmt_res(east_after['wealth'])}\n"
             f"      West after trade: food {fmt_res(west_before['food'])}->{fmt_res(west_after['food'])}, "
             f"wealth {fmt_res(west_before['wealth'])}->{fmt_res(west_after['wealth'])}\n"
-            f"      Relation now: {entry.get('relation_label')}"
+            f"      Relation now: {entry.get('relation_label')} ({entry.get('east_stance') or entry.get('west_stance')}) "
+            f"score={fmt_res(entry.get('relation_score'))}"
         )
 
     wage_rows: list[str] = []
