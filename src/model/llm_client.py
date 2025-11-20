@@ -6,15 +6,20 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Dict
+import logging
 
 import requests
+
+import config
+
+log = logging.getLogger(__name__)
 
 # I mirror the allowed action list locally (the source lives in ``LeaderAgent``) so the prompt
 # instructions and validation stay consistent without creating circular imports.
 _ALLOWED_ACTIONS: tuple[str, ...] = (
     "focus_food",
+    "focus_wood",
     "focus_wealth",
-    "balanced",
     "build_infrastructure",
     "wait",
 )
@@ -41,69 +46,54 @@ class LLMDecisionClient:
 
     def compose_prompt(self, state: Dict[str, Any]) -> str:
         """I describe the state, enumerate valid actions, and demand JSON output."""
-        territory = state.get("territory") or state.get("name", "Unknown")
-        food = state.get("food", "unknown")
-        wealth = state.get("wealth", "unknown")
-        wood = state.get("wood", "unknown")
-        population = state.get("population", "unknown")
-        required_food = state.get("required_food", "unknown")
-        relation = state.get("relation_to_neighbor", "neutral")
+        name = state.get("territory", "Unknown")
+        food = state.get("food", 0.0)
+        wealth = state.get("wealth", 0.0)
+        wood = state.get("wood", 0.0)
+        pop = state.get("population", 0.0)
+        required_food = state.get("required_food", 0.0)
+        infra = state.get("infra", state.get("infrastructure_level", 0))
+        work_points = state.get("work_points", 0)
         step = state.get("step", "unknown")
-        neighbor_name = state.get("neighbor_name", "West")
-        neighbor_food = state.get("neighbor_food", "unknown")
-        neighbor_wealth = state.get("neighbor_wealth", "unknown")
-        neighbor_population = state.get("neighbor_population", "unknown")
-        neighbor_wood = state.get("neighbor_wood", "unknown")
-        max_food_ff = state.get("max_food_if_focus_food", "unknown")
-        max_food_fw = state.get("max_food_if_focus_wealth", "unknown")
-        max_wealth_ff = state.get("max_wealth_if_focus_food", "unknown")
-        max_wealth_fw = state.get("max_wealth_if_focus_wealth", "unknown")
-        can_hit_ff = state.get("can_meet_quota_if_focus_food", "unknown")
-        can_hit_fw = state.get("can_meet_quota_if_focus_wealth", "unknown")
-        food_yield = state.get("food_yield", "unknown")
-        wealth_yield = state.get("wealth_yield", "unknown")
-        wood_yield = state.get("wood_yield", "unknown")
-        infra = state.get("infrastructure_level", "unknown")
-        effective_multiplier = state.get("effective_work_multiplier", "unknown")
-        current_season = state.get("current_season", "unknown")
-        next_season = state.get("next_season", "unknown")
-        # I give the LLM a clear action menu so it can reason about production vs. investment.
-        actions_hint = (
-            '- "focus_food": ≈70% food, 20% wealth, 10% wood (best for averting starvation right now).\n'
-            '- "focus_wealth": ≈70% wealth, 20% food, 10% wood (earn trade resources and pay wages).\n'
-            '- "balanced": split work across food/wealth/wood for steady growth.\n'
-            '- "build_infrastructure": spend 5 wood + 3 wealth (no production this step) to raise infrastructure_level by 1, boosting all future yields by ~10%.\n'
-            '- "wait": allocate zero work points; nothing grows.\n'
-        )
-        # I embed the current readings, including the neighbour snapshot, so the LLM sees the small economic contrast.
-        prompt = (
-            f"You currently lead {territory} at step {step}. Current season: {current_season}; next season: {next_season} "
-            "(summer boosts food/wood yields, winter suppresses them).\n"
-            f"Population: {population} people needing about {required_food} food this step to avoid starvation.\n"
-            f"Work points available: {state.get('work_points', 'unknown')} = floor(population/100) * effective_work_multiplier ({effective_multiplier}).\n"
-            "Falling short on wealth causes unpaid wages and reduces the multiplier next step, so morale (and wealth reserves) matter.\n"
-            f"Your resources -> food: {food}, wealth: {wealth}, wood: {wood}, infrastructure level: {infra} "
-            "(each infrastructure level boosts all yields by ~10%).\n"
-            f"Base yields per work point -> food: {food_yield}, wealth: {wealth_yield}, wood: {wood_yield}; "
-            "food and wood yields also scale with the current season multiplier.\n"
-            f"The neighbouring territory {neighbor_name} has food {neighbor_food}, wealth {neighbor_wealth}, "
-            f"wood {neighbor_wood}, population {neighbor_population}, and the relationship is {relation} "
-            f"(score {state.get('relation_score', 'unknown')}).\n"
-            "Wood gathers like other resources and is required (with wealth) to build infrastructure. "
-            "Infrastructure upgrades permanently increase all yields, so balancing investment against survival is crucial.\n"
-            f"If you focus on food you can reach food ≈ {max_food_ff} and wealth ≈ {max_wealth_ff} "
-            f"(meets quota? {can_hit_ff}). If you focus on wealth you can reach food ≈ {max_food_fw} "
-            f"and wealth ≈ {max_wealth_fw} (meets quota? {can_hit_fw}).\n"
-            "Your strategic goal is to keep the civilisation alive, grow population, maintain dignity and autonomy, "
-            "and balance food, wealth, and wood. Avoid starvation in the short term, but also maintain enough wealth to pay wages "
-            "and invest in infrastructure when you can afford it.\n"
-            "Choose exactly one of these actions:\n"
-            f"{actions_hint}"
-            "Respond with ONE JSON object like "
-            '{"action": <allowed_action>, "target": "None", "reason": <short sentence>}.\n'
-            "Do not output explanations or code fences, only that JSON.\n"
-        )
-        # I encode the survival-first goal in the prompt so the LLM keeps the population alive for the demo narrative.
+        relation = state.get("relation_to_neighbor", "neutral")
+        relation_score = state.get("relation_score", "unknown")
+        yields = state.get("yields", {})
+        priority_hint = state.get("priority_hint", {})
+
+        prompt = f"""
+You are the autonomous leader of the territory "{name}" at simulation step {step}.
+Population: {pop:.0f} people, requiring {required_food:.2f} food per step to avoid starvation.
+Current resources: food={food:.2f}, wealth={wealth:.2f}, wood={wood:.2f}, infrastructure level={infra}.
+Work points available this step: {work_points} (100 population ≈ 1 work point adjusted by morale).
+
+Per-work yields with current infrastructure:
+  - focus_food:  {yields.get('food_per_work', 0.0):.3f} food/work
+  - focus_wood:  {yields.get('wood_per_work', 0.0):.3f} wood/work
+  - focus_wealth: {yields.get('wealth_per_work', 0.0):.3f} wealth/work
+
+Soft priority hint (you may override this):
+  - food_safety_ratio (food vs. next {config.FOOD_SAFETY_HORIZON_STEPS} steps): {priority_hint.get('food_safety_ratio', 0.0):.3f}
+  - suggested weights: {priority_hint.get('priorities', {})}
+
+Available actions (choose exactly one):
+  - "focus_food": devote all work points to growing food using the food_per_work yield.
+  - "focus_wood": devote all work points to growing wood using the wood_per_work yield.
+  - "focus_wealth": devote all work points to growing wealth using the wealth_per_work yield.
+  - "build_infrastructure": if you have at least {config.INFRA_COST_WOOD} wood and {config.INFRA_COST_WEALTH} wealth, consume them to raise infrastructure by 1, permanently boosting yields.
+  - "wait": conserve resources and do nothing this step.
+
+Objectives (in soft order):
+1. Avoid starvation in the short and medium term.
+2. Build resilience by investing in infrastructure when food safety allows.
+3. Develop prosperity (wealth/wood) to unlock future options.
+
+You can follow or override the hint depending on the situation. Consider trade-offs between immediate survival and longer-term strength.
+
+Respond with a single JSON object of the form:
+{{"action": "<focus_food|focus_wood|focus_wealth|build_infrastructure|wait>", "target": "None", "reason": "<why this is best now>"}}
+
+Do not include extra keys or commentary outside this JSON.
+"""
         return prompt
 
     def _parse_response(self, raw_text: str) -> Dict[str, Any] | None:
@@ -174,37 +164,36 @@ class LLMDecisionClient:
             raise RuntimeError("LLMDecisionClient is disabled.")
 
         prompt = self.compose_negotiation_prompt(state)
-        response = requests.post(
-            self.config.base_url,
-            json={
-                "model": self.config.model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are simulating a calm negotiation between East and West.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": self.config.max_tokens,
-                "temperature": self.config.temperature,
-            },
-            timeout=self.config.timeout,
-        )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
+        try:
+            response = requests.post(
+                self.config.base_url,
+                json={
+                    "model": self.config.model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are simulating a calm negotiation between East and West.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": self.config.max_tokens,
+                    "temperature": self.config.temperature,
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            text = response.json()["choices"][0]["message"]["content"].strip()
+        except requests.RequestException as exc:
+            log.warning("LLM negotiation request failed (%s); falling back to heuristic trade.", exc)
+            return self._fallback_negotiation()
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning("LLM negotiation response parsing failed (%s); falling back to heuristic trade.", exc)
+            return self._fallback_negotiation()
         parsed = self._parse_response(text)
 
         if parsed is None:
-            print("LLMDecisionClient: failed to parse negotiation JSON, defaulting to no trade.")
-            return {
-                "east_line": "Let's hold steady for now.",
-                "west_line": "Agreed, we can revisit later.",
-                "trade": {
-                    "food_from_east_to_west": 0,
-                    "wealth_from_west_to_east": 0,
-                    "reason": "fallback trade",
-                },
-            }
+            log.warning("LLM negotiation JSON invalid; using fallback trade.")
+            return self._fallback_negotiation()
 
         trade = parsed.get("trade") or {}
 
@@ -237,33 +226,37 @@ class LLMDecisionClient:
 
         # I convert the structured state into a textual prompt.
         prompt = self.compose_prompt(state)
-        # I follow the OpenAI chat-completion schema so LM Studio can understand the request and I do everything via HTTP requests.
-        response = requests.post(
-            self.config.base_url,
-            json={
-                "model": self.config.model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a careful decision-making ruler agent.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": self.config.max_tokens,
-                "temperature": self.config.temperature,
-            },
-            timeout=self.config.timeout,
-        )
-        # I raise if the HTTP layer fails so the caller can handle errors.
-        response.raise_for_status()
-        data = response.json()
-        # I pull the assistant reply text from the first choice.
-        text = data["choices"][0]["message"]["content"].strip()
+        try:
+            response = requests.post(
+                self.config.base_url,
+                json={
+                    "model": self.config.model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a careful decision-making ruler agent.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": self.config.max_tokens,
+                    "temperature": self.config.temperature,
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            text = data["choices"][0]["message"]["content"].strip()
+        except requests.RequestException as exc:
+            log.warning("LLM decision request failed (%s); using fallback policy.", exc)
+            return self._fallback_decision("request failed")
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning("LLM decision parsing failed (%s); using fallback policy.", exc)
+            return self._fallback_decision("response parsing failed")
 
         parsed = self._parse_response(text)
         if parsed is None:
-            print("LLMDecisionClient: failed to parse JSON, falling back to rule-based policy.")
-            return {"action": None, "target": "None", "reason": "LLM output was not valid JSON."}
+            log.warning("LLM decision JSON invalid; using fallback policy.")
+            return self._fallback_decision("invalid JSON")
 
         action_raw = str(parsed.get("action", "")).strip().lower()
         action_value = action_raw if action_raw in _ALLOWED_ACTIONS else None
@@ -281,4 +274,24 @@ class LLMDecisionClient:
             "action": action_value,
             "target": target_value,
             "reason": reason_value,
+        }
+
+    def _fallback_negotiation(self) -> Dict[str, Any]:
+        """I return a safe no-trade negotiation result."""
+        return {
+            "east_line": "Let's hold steady for now.",
+            "west_line": "Agreed, we can revisit later.",
+            "trade": {
+                "food_from_east_to_west": 0,
+                "wealth_from_west_to_east": 0,
+                "reason": "fallback trade",
+            },
+        }
+
+    def _fallback_decision(self, reason: str) -> Dict[str, Any]:
+        """I provide a neutral fallback decision payload when the LLM is unreachable."""
+        return {
+            "action": None,
+            "target": "None",
+            "reason": f"LLM decision fallback: {reason}",
         }

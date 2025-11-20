@@ -9,6 +9,24 @@ from typing import Any, Dict, List
 
 import mesa
 
+import config
+
+
+def _fmt_res(value: Any) -> str:
+    """I format resource numbers with the configured precision."""
+    try:
+        return f"{float(value):.{config.RESOURCE_DISPLAY_DECIMALS}f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _fmt_pop(value: Any) -> str:
+    """I format population counts with the configured precision (typically whole numbers)."""
+    try:
+        decimals = max(0, int(config.POP_DISPLAY_DECIMALS))
+        return f"{float(value):.{decimals}f}"
+    except (TypeError, ValueError):
+        return "n/a"
 from src.agents.leader import LeaderAgent, TerritoryState
 from src.model.llm_client import LLMDecisionClient, LLMConfig
 
@@ -17,7 +35,7 @@ class WorldModel(mesa.Model):
     """I track the single territory, plug in the leader agent, and collect every decision for
     the feasibility write-up."""
 
-    def __init__(self, random_seed: int | None = None, initial_food: int = 8, use_llm: bool = False) -> None:
+    def __init__(self, random_seed: int | None = None, initial_food: float = config.STARTING_FOOD, use_llm: bool = False) -> None:
         """I accept ``random_seed``, ``initial_food``, and ``use_llm`` so I can reproduce runs and
         decide whether the leader should query the local LLM."""
         # I let Mesa set up its internal agent containers while honoring the random seed.
@@ -30,34 +48,29 @@ class WorldModel(mesa.Model):
         self.east = TerritoryState(
             name="East",
             food=float(initial_food),
-            wealth=5.0,
+            wealth=config.STARTING_WEALTH,
             relation_to_neighbor="neutral",
-            population=100,
-            food_yield=1.5,
-            wealth_yield=0.5,
-            wood=0.0,
-            wood_yield=1.0,
-            infrastructure_level=0,
+            population=config.STARTING_POPULATION,
+            food_yield=config.EAST_FOOD_YIELD,
+            wealth_yield=config.EAST_WEALTH_YIELD,
+            wood=config.STARTING_WOOD,
+            wood_yield=config.EAST_WOOD_YIELD,
+            infrastructure_level=config.STARTING_INFRASTRUCTURE_LEVEL,
         )
         self.west = TerritoryState(
             name="West",
             food=float(initial_food),
-            wealth=5.0,
+            wealth=config.STARTING_WEALTH,
             relation_to_neighbor="neutral",
-            population=100,
-            food_yield=0.5,
-            wealth_yield=1.5,
-            wood=0.0,
-            wood_yield=1.0,
-            infrastructure_level=0,
+            population=config.STARTING_POPULATION,
+            food_yield=config.WEST_FOOD_YIELD,
+            wealth_yield=config.WEST_WEALTH_YIELD,
+            wood=config.STARTING_WOOD,
+            wood_yield=config.WEST_WOOD_YIELD,
+            infrastructure_level=config.STARTING_INFRASTRUCTURE_LEVEL,
         )
-        self.seasons = ["spring", "summer", "autumn", "winter"]
-        self.season_multipliers = {
-            "spring": 1.0,
-            "summer": 1.2,
-            "autumn": 0.8,
-            "winter": 0.4,
-        }
+        self.seasons = list(config.SEASONS)
+        self.season_multipliers = dict(config.SEASON_MULTIPLIERS)
         initial_label = self._relation_label(0)
         self.east.relation_score = 0
         self.west.relation_score = 0
@@ -297,11 +310,6 @@ class WorldModel(mesa.Model):
         self.chronicle.append(entry)
 
     def _print_step_summary(self) -> None:
-        def _fmt(value: Any) -> Any:
-            if isinstance(value, (int, float)):
-                return f"{value:.2f}"
-            return value
-
         for territory in ["West", "East"]:
             info = self.current_step_log.get(territory, {})
             decision = info.get("decision", {})
@@ -313,11 +321,11 @@ class WorldModel(mesa.Model):
                 action = decision.get("decision", {}).get("action")
                 print(
                     f"  {territory}: action={action} (LLM: {used_llm})\n"
-                    f"    Resources: food {before.get('food')}->{after.get('food')}, "
-                    f"wealth {before.get('wealth')}->{after.get('wealth')}, "
-                    f"wood {before.get('wood')}->{after.get('wood')}, "
-                    f"infra {after.get('infrastructure_level')}\n"
-                    f"    Pop: {before.get('population')}\n"
+                    f"    Resources: food {_fmt_res(before.get('food'))}->{_fmt_res(after.get('food'))}, "
+                    f"wealth {_fmt_res(before.get('wealth'))}->{_fmt_res(after.get('wealth'))}, "
+                    f"wood {_fmt_res(before.get('wood'))}->{_fmt_res(after.get('wood'))}, "
+                    f"infra {before.get('infrastructure_level')}->{after.get('infrastructure_level')}\n"
+                    f"    Pop: {_fmt_pop(before.get('population'))}\n"
                     f"    Reason: {reason}"
                 )
                 self._append_chronicle_action(territory, info)
@@ -335,12 +343,12 @@ class WorldModel(mesa.Model):
                 f"    West: \"{entry['west_line']}\"\n"
                 f"    Trade flows -> food East->West {entry['trade']['food_from_east_to_west']}, "
                 f"wealth West->East {entry['trade']['wealth_from_west_to_east']}\n"
-                f"      East after trade: food {east_before['food']}->{east_after['food']}, "
-                f"wealth {east_before['wealth']}->{east_after['wealth']}\n"
-                    f"      West after trade: food {west_before['food']}->{west_after['food']}, "
-                    f"wealth {west_before['wealth']}->{west_after['wealth']}\n"
-                    f"      Relation now: {entry.get('relation_label')}"
-                )
+                f"      East after trade: food {_fmt_res(east_before['food'])}->{_fmt_res(east_after['food'])}, "
+                f"wealth {_fmt_res(east_before['wealth'])}->{_fmt_res(east_after['wealth'])}\n"
+                f"      West after trade: food {_fmt_res(west_before['food'])}->{_fmt_res(west_after['food'])}, "
+                f"wealth {_fmt_res(west_before['wealth'])}->{_fmt_res(west_after['wealth'])}\n"
+                f"      Relation now: {entry.get('relation_label')}"
+            )
 
         wage_lines: list[str] = []
         for territory in ["West", "East"]:
@@ -349,8 +357,8 @@ class WorldModel(mesa.Model):
                 before_w = wages.get("before", {})
                 after_w = wages.get("after", {})
                 wage_lines.append(
-                    f"  Wages {territory}: wealth {before_w.get('wealth')}->{after_w.get('wealth')}, "
-                    f"mult {_fmt(before_w.get('multiplier'))}->{_fmt(after_w.get('multiplier'))}, "
+                    f"  Wages {territory}: wealth {_fmt_res(before_w.get('wealth'))}->{_fmt_res(after_w.get('wealth'))}, "
+                    f"mult {_fmt_res(before_w.get('multiplier'))}->{_fmt_res(after_w.get('multiplier'))}, "
                     f"on_strike={after_w.get('on_strike')}, unpaid_steps={after_w.get('unpaid_steps')}"
                 )
         if wage_lines:
@@ -362,21 +370,22 @@ class WorldModel(mesa.Model):
             if upkeep:
                 before_u = upkeep.get("before", {})
                 after_u = upkeep.get("after", {})
-                req = max(1, int(before_u.get("population", 0)) // 100)
+                req = (before_u.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
                 prefix = "\n" if idx == 0 else ""
                 print(
-                    f"{prefix}  {territory} upkeep: food {before_u.get('food')}->{after_u.get('food')}, "
-                    f"wealth {before_u.get('wealth')}->{after_u.get('wealth')}, "
-                    f"wood {before_u.get('wood')}->{after_u.get('wood')}, "
+                    f"{prefix}  {territory} upkeep: food {_fmt_res(before_u.get('food'))}->{_fmt_res(after_u.get('food'))}, "
+                    f"wealth {_fmt_res(before_u.get('wealth'))}->{_fmt_res(after_u.get('wealth'))}, "
+                    f"wood {_fmt_res(before_u.get('wood'))}->{_fmt_res(after_u.get('wood'))}, "
                     f"infra {before_u.get('infrastructure_level')}->{after_u.get('infrastructure_level')}, "
-                    f"pop {before_u.get('population')}->{after_u.get('population')}, required_food {req}"
+                    f"pop {_fmt_pop(before_u.get('population'))}->{_fmt_pop(after_u.get('population'))}, "
+                    f"required_food {_fmt_res(req)}"
                 )
         print("\n" + "-" * 60 + "\n")
 
     def apply_wages(self, territory: TerritoryState) -> None:
         """I deduct wages and model morale strikes when wealth runs dry."""
-        workers = max(0, territory.population // 100)
-        wage_per_worker = 0.2
+        workers = max(0, territory.population // config.PEOPLE_PER_WORK_POINT)
+        wage_per_worker = config.WAGE_PER_WORKER
         wage_bill = workers * wage_per_worker
         if wage_bill <= 0:
             territory.effective_work_multiplier = 1.0
@@ -393,32 +402,36 @@ class WorldModel(mesa.Model):
 
         territory.unpaid_steps += 1
         territory.wealth = 0.0
-        if territory.unpaid_steps >= 2:
+        if territory.unpaid_steps >= config.STRIKE_THRESHOLD_STEPS:
             territory.on_strike = True
-        morale = 0.25 if territory.on_strike else 0.7
+        morale = config.STRIKE_MULTIPLIER if territory.on_strike else config.LOW_MORALE_MULTIPLIER
         territory.effective_work_multiplier = morale
 
     def _apply_population_dynamics(self, territory: TerritoryState) -> None:
         """I now focus this on upkeep: food consumption, starvation, and simple growth."""
-        required_food = max(1, territory.population // 100)
-        starvation = 0
+        required_food = (territory.population / 10.0) * config.FOOD_PER_10_POP
+        territory.required_food = required_food
+        if required_food <= 0:
+            territory.food = max(0.0, territory.food)
+            territory.wealth = max(0.0, territory.wealth)
+            return
+
         if territory.food >= required_food:
             territory.food -= required_food
+            growth = territory.population * config.POP_GROWTH_RATE
+            territory.population += growth
         else:
             deficit = required_food - territory.food
-            territory.food = 0
-            starvation = deficit * 100
-            territory.population = max(0, territory.population - starvation)
-        territory.food = max(0, territory.food)
-        territory.wealth = max(0, territory.wealth)
-        if starvation > 0:
-            return
-        food_after = territory.food
-        big_surplus_threshold = 2 * required_food
-        if food_after >= big_surplus_threshold:
-            territory.population += 100
-        elif self.random.random() < 0.5:
-            territory.population += 100
+            territory.food = 0.0
+            loss_fraction = deficit * config.POP_LOSS_RATE_PER_MISSING_FOOD
+            loss_fraction = max(0.0, min(loss_fraction, 0.9))
+            if loss_fraction > 0.0 and territory.population > 0.0:
+                territory.population *= (1.0 - loss_fraction)
+
+        territory.food = max(0.0, territory.food)
+        territory.wealth = max(0.0, territory.wealth)
+        if territory.population < 0.0:
+            territory.population = 0.0
 
     def run_negotiation(self) -> None:
         """I let the two leaders negotiate every couple of steps and capture the dialogue plus trade."""
@@ -531,11 +544,11 @@ class WorldModel(mesa.Model):
         if not gift_classified and units_food > 0:
             if food_flow > 0:
                 receiver_before = west_before
-                receiver_required = max(1, int(west_before.get("population", 0)) // 100)
-                at_risk = west_before["food"] < 1.5 * receiver_required
+                receiver_required = (receiver_before.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
+                at_risk = receiver_before["food"] < 1.5 * receiver_required
             else:
                 receiver_before = east_before
-                receiver_required = max(1, int(east_before.get("population", 0)) // 100)
+                receiver_required = (receiver_before.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
                 at_risk = receiver_before["food"] < 1.5 * receiver_required
 
             if abs(wealth_flow) > eps and (food_flow * wealth_flow) < 0:

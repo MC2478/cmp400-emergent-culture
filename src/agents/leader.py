@@ -5,15 +5,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-import math
 
 import mesa
 
+from config import (
+    PEOPLE_PER_WORK_POINT,
+    FOOD_PER_10_POP,
+    FOOD_PER_WORK_BASE,
+    WOOD_PER_WORK_BASE,
+    WEALTH_PER_WORK_BASE,
+    INFRA_FOOD_YIELD_MULT_PER_LEVEL,
+    INFRA_WOOD_YIELD_MULT_PER_LEVEL,
+    INFRA_WEALTH_YIELD_MULT_PER_LEVEL,
+    INFRA_COST_WOOD,
+    INFRA_COST_WEALTH,
+    FOOD_SAFETY_HORIZON_STEPS,
+    FOOD_SAFETY_GOOD_RATIO,
+    NON_FOOD_MIN_FRACTION,
+)
 from src.model.llm_client import LLMDecisionClient
 
 # I centralise the rule set here so both the LLM and rule-based flows share the same vocabulary.
-# I recently expanded the vocabulary with infrastructure building so the LLM can invest.
-ALLOWED_ACTIONS: set[str] = {"focus_food", "focus_wealth", "balanced", "build_infrastructure", "wait"}
+ALLOWED_ACTIONS: set[str] = {
+    "focus_food",
+    "focus_wood",
+    "focus_wealth",
+    "build_infrastructure",
+    "wait",
+}
 
 
 @dataclass
@@ -34,6 +53,7 @@ class TerritoryState:
     effective_work_multiplier: float = 1.0
     unpaid_steps: int = 0
     on_strike: bool = False
+    required_food: float = 0.0
 
 
 class LeaderAgent(mesa.Agent):
@@ -61,12 +81,50 @@ class LeaderAgent(mesa.Agent):
 
     def _work_points(self) -> int:
         """I convert population into coarse work points (100 people = 1 work point)."""
-        base = max(0, self.territory.population // 100)
+        base = max(0, self.territory.population // PEOPLE_PER_WORK_POINT)
         return int(base * max(0.0, self.territory.effective_work_multiplier))
+
+    def _required_food(self) -> float:
+        """I compute the granular food requirement using the shared config."""
+        return max(0.0, (self.territory.population / 10.0) * FOOD_PER_10_POP)
+
+    def _effective_yields(self) -> Dict[str, float]:
+        """I report yields per work point after infrastructure bonuses."""
+        level = self.territory.infrastructure_level
+        food_mult = 1.0 + level * INFRA_FOOD_YIELD_MULT_PER_LEVEL
+        wood_mult = 1.0 + level * INFRA_WOOD_YIELD_MULT_PER_LEVEL
+        wealth_mult = 1.0 + level * INFRA_WEALTH_YIELD_MULT_PER_LEVEL
+        return {
+            "food_per_work": self.territory.food_yield * FOOD_PER_WORK_BASE * food_mult,
+            "wood_per_work": self.territory.wood_yield * WOOD_PER_WORK_BASE * wood_mult,
+            "wealth_per_work": self.territory.wealth_yield * WEALTH_PER_WORK_BASE * wealth_mult,
+        }
+
+    def _priority_hint(self) -> Dict[str, Any]:
+        """I provide a soft suggestion about where to focus."""
+        required_per_step = self._required_food()
+        horizon = FOOD_SAFETY_HORIZON_STEPS
+        required_for_horizon = required_per_step * horizon
+        current_food = self.territory.food
+        food_safety_ratio = (
+            current_food / required_for_horizon if required_for_horizon > 0 else float("inf")
+        )
+        priorities = {"survive": 1.0, "resilience": 0.0, "prosperity": 0.0}
+        if food_safety_ratio >= 1.0:
+            priorities["resilience"] = max(priorities["resilience"], NON_FOOD_MIN_FRACTION)
+        if food_safety_ratio >= FOOD_SAFETY_GOOD_RATIO:
+            priorities["prosperity"] = max(priorities["prosperity"], NON_FOOD_MIN_FRACTION)
+        return {
+            "food_safety_ratio": food_safety_ratio,
+            "priorities": priorities,
+            "required_for_horizon": required_for_horizon,
+        }
 
     def _snapshot(self) -> Dict[str, Any]:
         """I grab a simple before/after snapshot for chronicle logging."""
         neighbor = self.neighbor
+        required_food = self._required_food()
+        self.territory.required_food = required_food
         return {
             "food": self.territory.food,
             "wealth": self.territory.wealth,
@@ -74,15 +132,12 @@ class LeaderAgent(mesa.Agent):
             "relation_to_neighbor": self.territory.relation_to_neighbor,
             "relation_score": self.territory.relation_score,
             "population": self.territory.population,
-            "required_food": max(1, self.territory.population // 100),
+            "required_food": required_food,
             "work_points": self._work_points(),
             "infrastructure_level": self.territory.infrastructure_level,
             "effective_work_multiplier": self.territory.effective_work_multiplier,
             "unpaid_steps": self.territory.unpaid_steps,
             "on_strike": self.territory.on_strike,
-            "food_yield": self.territory.food_yield,
-            "wealth_yield": self.territory.wealth_yield,
-            "wood_yield": self.territory.wood_yield,
             "neighbor_food": neighbor.food if neighbor else None,
             "neighbor_wealth": neighbor.wealth if neighbor else None,
             "neighbor_population": neighbor.population if neighbor else None,
@@ -91,21 +146,10 @@ class LeaderAgent(mesa.Agent):
 
     def _state_dict(self) -> Dict[str, Any]:
         """I convert the territory and timestep into a JSON-friendly dict."""
-        # I include the current model step so the LLM knows where in the timeline we are.
         work_points = self._work_points()
-        required_food = max(1, self.territory.population // 100)
-        food_yield = max(0.0, self.territory.food_yield)
-        wealth_yield = max(0.0, self.territory.wealth_yield)
-        food_points_ff = math.ceil(0.75 * work_points)
-        wealth_points_ff = work_points - food_points_ff
-        max_food_ff = self.territory.food + food_points_ff * food_yield
-        max_wealth_ff = self.territory.wealth + wealth_points_ff * wealth_yield
-        wealth_points_fw = math.ceil(0.75 * work_points)
-        food_points_fw = work_points - wealth_points_fw
-        max_food_fw = self.territory.food + food_points_fw * food_yield
-        max_wealth_fw = self.territory.wealth + wealth_points_fw * wealth_yield
-        can_hit_ff = max_food_ff >= required_food
-        can_hit_fw = max_food_fw >= required_food
+        required_food = self._required_food()
+        yields = self._effective_yields()
+        priority_hint = self._priority_hint()
         state = {
             "territory": self.territory.name,
             "food": self.territory.food,
@@ -116,17 +160,10 @@ class LeaderAgent(mesa.Agent):
             "population": self.territory.population,
             "required_food": required_food,
             "work_points": work_points,
+            "infra": self.territory.infrastructure_level,
             "effective_work_multiplier": self.territory.effective_work_multiplier,
-            "max_food_if_focus_food": max_food_ff,
-            "max_food_if_focus_wealth": max_food_fw,
-            "max_wealth_if_focus_food": max_wealth_ff,
-            "max_wealth_if_focus_wealth": max_wealth_fw,
-            "can_meet_quota_if_focus_food": can_hit_ff,
-            "can_meet_quota_if_focus_wealth": can_hit_fw,
-            "food_yield": self.territory.food_yield,
-            "wealth_yield": self.territory.wealth_yield,
-            "wood_yield": self.territory.wood_yield,
-            "infrastructure_level": self.territory.infrastructure_level,
+            "yields": yields,
+            "priority_hint": priority_hint,
             "current_season": self.model.current_season(),
             "next_season": self.model.next_season(),
             "step": self.model.steps,
@@ -151,132 +188,63 @@ class LeaderAgent(mesa.Agent):
                     "neighbor_wood": None,
                 }
             )
-        # I want the LLM to see both my own resources and a tiny snapshot of the neighbour.
         return state
 
-    def decide_rule_based(self) -> Dict[str, Any]:
-        """I provide the deterministic fallback decision policy."""
-        required_food = max(1, self.territory.population // 100)
-        work_points = self._work_points()
-        food_yield = max(0.0, self.territory.food_yield)
-        food_points_ff = math.ceil(0.75 * work_points)
-        max_food_ff = self.territory.food + food_points_ff * food_yield
-        can_hit_ff = max_food_ff >= required_food
-
-        wood_ok = self.territory.wood >= 5.0
-        wealth_ok = self.territory.wealth >= 3.0
-        infra_room = self.territory.infrastructure_level < 5
-        has_buffer = self.territory.food >= required_food * 1.5
-
-        if wood_ok and wealth_ok and infra_room and has_buffer:
-            action = "build_infrastructure"
-            reason = "I can afford another infrastructure project to boost yields."
-        elif not can_hit_ff:
-            action = "focus_wealth"
-            reason = "Even focusing on food I cannot reach my food requirement, so I focus on wealth to trade."
-        elif self.territory.food < required_food:
+    def _fallback_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """I choose a simple action when the LLM response is unusable."""
+        hint = state.get("priority_hint", {})
+        ratio = hint.get("food_safety_ratio", 0.0)
+        infra_level = state.get("infra", 0)
+        if ratio < 1.0:
             action = "focus_food"
-            reason = "I can reach my food requirement by focusing on food, so I prioritise food."
-        elif self.territory.wealth < 10.0:
-            action = "focus_wealth"
-            reason = "Food is safe and wealth is low, so I focus on wealth."
+        elif infra_level < 3 and self.territory.wood >= INFRA_COST_WOOD and self.territory.wealth >= INFRA_COST_WEALTH:
+            action = "build_infrastructure"
+        elif ratio < FOOD_SAFETY_GOOD_RATIO:
+            action = "focus_food"
         else:
-            action = "balanced"
-            reason = "Food and wealth are both acceptable, so I balance them."
+            action = "focus_wealth"
+        return {"action": action, "target": "None", "reason": "Fallback heuristic decision."}
 
-        # I always return a dict compatible with both logging and the LLM interface.
-        return {"action": action, "target": "None", "reason": reason}
+    def decide_rule_based(self) -> Dict[str, Any]:
+        """I fall back to the heuristic action when the LLM output is invalid."""
+        return self._fallback_action(self._state_dict())
 
     def apply_action(self, decision: Dict[str, Any]) -> None:
         """I mutate the territory state according to the chosen action."""
         action = (decision.get("action") or "wait").lower()
         if action not in ALLOWED_ACTIONS:
-            # I sanitize unknown actions to "wait" so a rogue response cannot break the feasibility demo.
-            action = "wait"
-
-        season = self.model.current_season()
-        mult = self.model.season_multipliers.get(season, 1.0)
-        infra_bonus = 1.0 + 0.1 * self.territory.infrastructure_level
-        eff_food_yield = self.territory.food_yield * infra_bonus * mult
-        eff_wealth_yield = self.territory.wealth_yield * infra_bonus
-        eff_wood_yield = self.territory.wood_yield * infra_bonus * mult
-
-        if action == "build_infrastructure":
-            wood_cost = 5.0
-            wealth_cost = 3.0
-            can_build = self.territory.wood >= wood_cost and self.territory.wealth >= wealth_cost
-            if can_build:
-                self.territory.wood -= wood_cost
-                self.territory.wealth -= wealth_cost
-                self.territory.infrastructure_level += 1
-            reason = decision.get("reason")
-            if not reason:
-                reason = (
-                    "I invest wood and wealth to raise infrastructure yields."
-                    if can_build
-                    else "I attempted to build infrastructure but lacked resources."
-                )
-            decision["reason"] = reason
-            self.last_action = action
-            self.last_reason = reason
-            return
+            decision = self._fallback_action(self._state_dict())
+            action = decision["action"]
 
         work_points = self._work_points()
-        food_points = 0
-        wealth_points = 0
-        wood_points = 0
+        yields = self._effective_yields()
+        season = self.model.current_season()
+        season_mult = self.model.season_multipliers.get(season, 1.0)
+        food_yield = yields["food_per_work"] * season_mult
+        wood_yield = yields["wood_per_work"] * season_mult
+        wealth_yield = yields["wealth_per_work"]
 
-        if action == "focus_food":
-            if work_points == 1:
-                food_points = 1
-            elif work_points >= 2:
-                food_points = max(1, int(work_points * 0.7))
-                wealth_points = int(work_points * 0.2)
-                wood_points = work_points - food_points - wealth_points
-                if wood_points < 0:
-                    wealth_points = max(0, wealth_points + wood_points)
-                    wood_points = 0
-            # work_points == 0 leaves everything at zero
+        if action == "build_infrastructure":
+            can_build = (
+                self.territory.wood >= INFRA_COST_WOOD
+                and self.territory.wealth >= INFRA_COST_WEALTH
+            )
+            if can_build:
+                self.territory.wood -= INFRA_COST_WOOD
+                self.territory.wealth -= INFRA_COST_WEALTH
+                self.territory.infrastructure_level += 1
+            else:
+                action = "wait"
+                decision["reason"] = "Could not afford infrastructure; idling."
+        elif action == "focus_food":
+            self.territory.food += work_points * food_yield
+        elif action == "focus_wood":
+            self.territory.wood += work_points * wood_yield
         elif action == "focus_wealth":
-            if work_points == 1:
-                wealth_points = 1
-            elif work_points >= 2:
-                wealth_points = max(1, int(work_points * 0.7))
-                food_points = int(work_points * 0.2)
-                wood_points = work_points - food_points - wealth_points
-                if wood_points < 0:
-                    food_points = max(0, food_points + wood_points)
-                    wood_points = 0
-        elif action == "balanced":
-            if work_points > 0:
-                base = work_points // 3
-                remainder = work_points - base * 3
-                food_points = base
-                wealth_points = base
-                wood_points = base
-                if remainder > 0:
-                    food_points += 1
-                    remainder -= 1
-                if remainder > 0:
-                    wealth_points += 1
-                    remainder -= 1
-                if remainder > 0:
-                    wood_points += 1
+            self.territory.wealth += work_points * wealth_yield
         elif action == "wait":
-            food_points = 0
-            wealth_points = 0
-            wood_points = 0
+            pass
 
-        used_points = food_points + wealth_points + wood_points
-        if used_points > work_points:
-            wood_points = max(0, wood_points - (used_points - work_points))
-        wood_points = max(0, min(wood_points, work_points))
-
-        self.territory.food += food_points * eff_food_yield
-        self.territory.wealth += wealth_points * eff_wealth_yield
-        self.territory.wood += wood_points * eff_wood_yield
-
-        # I record the action and reason for downstream inspection.
         self.last_action = action
         self.last_reason = decision.get("reason", "no reason provided")
 
@@ -304,14 +272,13 @@ class LeaderAgent(mesa.Agent):
         decision: Optional[Dict[str, Any]] = None
         llm_used = False
         state_before = self._snapshot()
+        state_payload = self._state_dict()
 
         if self.llm_client is not None and self.llm_client.enabled:
             try:
-                # I attempt to get the richer LLM decision first.
-                decision = self.llm_client.decide(self._state_dict())
+                decision = self.llm_client.decide(state_payload)
             except Exception as e:  # pragma: no cover - logging guard
-                # I want the Week 11 feasibility demo to keep running even if the LLM endpoint wobbles.
-                print(f"[WARN] LLM decision failed ({e}), falling back to rule-based policy.")
+                print(f"[WARN] LLM decision failed ({e}), falling back to heuristic policy.")
 
         invalid_llm = True
         if isinstance(decision, dict):
@@ -324,10 +291,9 @@ class LeaderAgent(mesa.Agent):
                     llm_used = True
 
         if invalid_llm:
-            # I log this so I remember the sim intentionally dropped back to deterministic rules for robustness.
             if decision is not None:
-                print("[INFO] LLM produced an invalid action, so I am using the rule-based policy instead.")
-            decision = self.decide_rule_based()
+                print("[INFO] LLM produced an invalid action, so I am using the heuristic policy instead.")
+            decision = self._fallback_action(state_payload)
             llm_used = False
 
         # I enact the decision and ask the model to log the outcome.

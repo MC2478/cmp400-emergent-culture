@@ -10,6 +10,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Optional
 
+import config
 from src.model.world_model import WorldModel
 
 
@@ -20,7 +21,7 @@ class RunConfig:
 
     steps: int = 25
     seed: int = 42
-    initial_food: int = 3
+    initial_food: float = config.STARTING_FOOD
     use_llm: bool = True
 
     def chronicle_path(self) -> Path:
@@ -144,5 +145,15 @@ def summarize_chronicle(path: Path) -> None:
 
 
 if __name__ == "__main__":
+    raw = input("How many steps should the simulation run for? [default: 25] ")
+    try:
+        steps = int(raw.strip()) if raw.strip() else 25
+        if steps <= 0:
+            print("Steps must be positive, defaulting to 25.")
+            steps = 25
+    except ValueError:
+        print("Invalid input, defaulting to 25 steps.")
+        steps = 25
+
     # I run a simple demo here and explicitly enable the LLM for decisions.
-    run_demo(use_llm=True)
+    run_demo(steps=steps, use_llm=True)
