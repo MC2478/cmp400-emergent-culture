@@ -29,7 +29,60 @@ def _sanitise_flow(trade: Dict[str, Any], key: str) -> float:
     except (ValueError, TypeError):
         delta = 0.0
     # I allow fractional flows so tiny gifts make it through, but still clamp extremes.
-    return max(-5.0, min(5.0, round(delta, 1)))
+    return max(-5.0, min(5.0, delta))
+
+
+_TOKEN_GIFT_KEYWORDS: tuple[str, ...] = ("token", "symbolic", "gesture", "gift", "small swap", "small trade")
+
+
+def _dialogue_suggests_token(decision: Dict[str, Any], trade: Dict[str, Any]) -> bool:
+    """I scan the dialogue, closing lines, and trade reason for explicit token gift wording."""
+    bits: list[str] = []
+    reason = trade.get("reason")
+    if isinstance(reason, str):
+        bits.append(reason.lower())
+    for key in ("east_line", "west_line"):
+        value = decision.get(key, "")
+        if isinstance(value, str):
+            bits.append(value.lower())
+    for entry in decision.get("dialogue") or []:
+        if isinstance(entry, dict):
+            text = entry.get("line")
+            if isinstance(text, str):
+                bits.append(text.lower())
+    if not bits:
+        return False
+    combined = " ".join(bits)
+    return any(keyword in combined for keyword in _TOKEN_GIFT_KEYWORDS)
+
+
+def _token_gift_flow(
+    east_before: Dict[str, float],
+    west_before: Dict[str, float],
+    *,
+    east_required: float,
+    west_required: float,
+    east_safety: float,
+    west_safety: float,
+) -> tuple[float, float]:
+    """I decide whether a tiny food or wealth gift is safe to inject when the dialogue asks for one."""
+    token_size = 0.1
+    min_ratio_cushion = 0.15
+    food_gap_east = east_before["food"] - east_required
+    food_gap_west = west_before["food"] - west_required
+
+    if east_safety >= west_safety + min_ratio_cushion and food_gap_east >= token_size:
+        return (token_size, 0.0)
+    if west_safety >= east_safety + min_ratio_cushion and food_gap_west >= token_size:
+        return (-token_size, 0.0)
+
+    wealth_east = east_before.get("wealth", 0.0)
+    wealth_west = west_before.get("wealth", 0.0)
+    if wealth_east >= wealth_west + 0.5 and wealth_east >= token_size:
+        return (0.0, -token_size)
+    if wealth_west >= wealth_east + 0.5 and wealth_west >= token_size:
+        return (0.0, token_size)
+    return (0.0, 0.0)
 
 
 def _safe_vec(vec: Dict[str, float] | None) -> Dict[str, float]:
@@ -121,10 +174,17 @@ def _is_tiny_wealth_gift(amount: float, donor_amount: float) -> bool:
     return (tiny_absolute or tiny_relative) and remaining >= 0.5
 
 
-def _value_ratio_for_side(food_in: float, food_out: float, wealth_in: float, wealth_out: float) -> float:
+def _value_ratio_for_side(
+    food_in: float,
+    food_out: float,
+    wealth_in: float,
+    wealth_out: float,
+    gold_in: float,
+    gold_out: float,
+) -> float:
     """I approximate a value ratio so I can spot exploitative deals."""
-    value_in = food_in * 1.0 + wealth_in * 1.0
-    value_out = food_out * 1.0 + wealth_out * 1.0
+    value_in = food_in * 1.0 + wealth_in * 1.0 + gold_in * 1.0
+    value_out = food_out * 1.0 + wealth_out * 1.0 + gold_out * 1.0
     if value_out < 1e-6:
         return float("inf")
     return value_in / value_out
@@ -144,6 +204,8 @@ def _update_exploitation_streak(model: Any, east_exploited: bool, west_exploited
 
 def run_negotiation(model: Any) -> None:
     """Run negotiation between East and West if the LLM client is enabled."""
+    # [PRESENTATION] I position this negotiation routine as the stand-in for the planned council,
+    # emphasising how dialogue plus trade classification currently give me the diplomacy hooks I will later expand.
     llm_client = getattr(model, "llm_client", None)
     if llm_client is None or not llm_client.enabled:
         return
@@ -153,6 +215,8 @@ def run_negotiation(model: Any) -> None:
         "east": {
             "food": model.east.food,
             "wealth": model.east.wealth,
+            "iron": model.east.iron,
+            "gold": model.east.gold,
             "population": model.east.population,
             "relation_to_neighbor": model.east.relation_to_neighbor,
             "relation_score": model.east.relation_score,
@@ -163,6 +227,8 @@ def run_negotiation(model: Any) -> None:
         "west": {
             "food": model.west.food,
             "wealth": model.west.wealth,
+            "iron": model.west.iron,
+            "gold": model.west.gold,
             "population": model.west.population,
             "relation_to_neighbor": model.west.relation_to_neighbor,
             "relation_score": model.west.relation_score,
@@ -184,16 +250,24 @@ def run_negotiation(model: Any) -> None:
 
     food_flow = _sanitise_flow(trade, "food_from_east_to_west")
     wealth_flow = _sanitise_flow(trade, "wealth_from_west_to_east")
+    iron_e2w = max(0.0, _sanitise_flow(trade, "iron_from_east_to_west"))
+    iron_w2e = max(0.0, _sanitise_flow(trade, "iron_from_west_to_east"))
+    gold_e2w = max(0.0, _sanitise_flow(trade, "gold_from_east_to_west"))
+    gold_w2e = max(0.0, _sanitise_flow(trade, "gold_from_west_to_east"))
 
     east_before = {
         "food": model.east.food,
         "wealth": model.east.wealth,
         "population": model.east.population,
+        "iron": model.east.iron,
+        "gold": model.east.gold,
     }
     west_before = {
         "food": model.west.food,
         "wealth": model.west.wealth,
         "population": model.west.population,
+        "iron": model.west.iron,
+        "gold": model.west.gold,
     }
 
     # Clamp flows to available resources (allowing fractional gifts).
@@ -209,6 +283,15 @@ def run_negotiation(model: Any) -> None:
     elif wealth_flow < 0:
         wealth_flow = -min(abs(wealth_flow), float(model.east.wealth))
 
+    if iron_e2w > 0:
+        iron_e2w = min(iron_e2w, float(model.east.iron))
+    if iron_w2e > 0:
+        iron_w2e = min(iron_w2e, float(model.west.iron))
+    if gold_e2w > 0:
+        gold_e2w = min(gold_e2w, float(model.east.gold))
+    if gold_w2e > 0:
+        gold_w2e = min(gold_w2e, float(model.west.gold))
+
     def _food_safety(before: Dict[str, float]) -> tuple[float, float]:
         required = (before.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
         ratio = before.get("food", 0.0) / required if required > 0 else float("inf")
@@ -216,11 +299,29 @@ def run_negotiation(model: Any) -> None:
 
     east_safety, east_required = _food_safety(east_before)
     west_safety, west_required = _food_safety(west_before)
+    # --- Honour explicit token-gift language even if the flows were zeroed above. ---
+    if (
+        abs(food_flow) < 1e-6
+        and abs(wealth_flow) < 1e-6
+        and _dialogue_suggests_token(decision, trade)
+    ):
+        token_food, token_wealth = _token_gift_flow(
+            east_before,
+            west_before,
+            east_required=east_required,
+            west_required=west_required,
+            east_safety=east_safety,
+            west_safety=west_safety,
+        )
+        if abs(token_food) > 0 or abs(token_wealth) > 0:
+            food_flow = token_food
+            wealth_flow = token_wealth
     east_tiny_food = food_flow > 0 and _is_tiny_gift(food_flow, east_before["food"], east_required)
     west_tiny_food = food_flow < 0 and _is_tiny_gift(-food_flow, west_before["food"], west_required)
     west_tiny_wealth = wealth_flow > 0 and _is_tiny_wealth_gift(wealth_flow, west_before["wealth"])
     east_tiny_wealth = wealth_flow < 0 and _is_tiny_wealth_gift(-wealth_flow, east_before["wealth"])
 
+    # --- Keep donors safer than the recipient before allowing substantive shipments. ---
     # Block uphill gifts when donor is not safer.
     if food_flow > 0 and east_safety <= west_safety + 0.05 and not east_tiny_food:
         food_flow = 0
@@ -268,28 +369,57 @@ def run_negotiation(model: Any) -> None:
         model.east.wealth -= amount
         model.west.wealth += amount
 
+    if iron_e2w > 0:
+        model.east.iron -= iron_e2w
+        model.west.iron += iron_e2w
+    if iron_w2e > 0:
+        model.west.iron -= iron_w2e
+        model.east.iron += iron_w2e
+    if gold_e2w > 0:
+        model.east.gold -= gold_e2w
+        model.west.gold += gold_e2w
+    if gold_w2e > 0:
+        model.west.gold -= gold_w2e
+        model.east.gold += gold_w2e
+
     model.east.food = max(0.0, model.east.food)
     model.west.food = max(0.0, model.west.food)
     model.east.wealth = max(0.0, model.east.wealth)
     model.west.wealth = max(0.0, model.west.wealth)
+    model.east.iron = max(0.0, model.east.iron)
+    model.west.iron = max(0.0, model.west.iron)
+    model.east.gold = max(0.0, model.east.gold)
+    model.west.gold = max(0.0, model.west.gold)
 
     east_after = {
         "food": model.east.food,
         "wealth": model.east.wealth,
         "population": model.east.population,
+        "iron": model.east.iron,
+        "gold": model.east.gold,
     }
     west_after = {
         "food": model.west.food,
         "wealth": model.west.wealth,
         "population": model.west.population,
+        "iron": model.west.iron,
+        "gold": model.west.gold,
     }
 
     units_food = abs(food_flow)
     eps = 1e-6
     trade_type = "no_trade"
     effective_price = None
-    east_value = (east_after["food"] - east_before["food"]) + (east_after["wealth"] - east_before["wealth"])
-    west_value = (west_after["food"] - west_before["food"]) + (west_after["wealth"] - west_before["wealth"])
+    east_value = (
+        (east_after["food"] - east_before["food"])
+        + (east_after["wealth"] - east_before["wealth"])
+        + (east_after.get("gold", 0.0) - east_before.get("gold", 0.0))
+    )
+    west_value = (
+        (west_after["food"] - west_before["food"])
+        + (west_after["wealth"] - west_before["wealth"])
+        + (west_after.get("gold", 0.0) - west_before.get("gold", 0.0))
+    )
     gift_classified = False
     if east_value < 0 and west_value > 0 and wealth_flow <= 0:
         trade_type = "gift_from_east"
@@ -339,6 +469,7 @@ def run_negotiation(model: Any) -> None:
                 else:
                     trade_type = f"mildly_exploitative_for_{victim}"
 
+    # --- Detect subtle exploitation so pressure counters and relation labels stay accurate. ---
     east_exploited = False
     west_exploited = False
     if not gift_classified:
@@ -346,14 +477,22 @@ def run_negotiation(model: Any) -> None:
         east_food_out = max(food_flow, 0.0)
         east_wealth_in = max(wealth_flow, 0.0)
         east_wealth_out = max(-wealth_flow, 0.0)
+        east_gold_in = gold_w2e
+        east_gold_out = gold_e2w
         west_food_in = max(food_flow, 0.0)
         west_food_out = max(-food_flow, 0.0)
         west_wealth_in = max(-wealth_flow, 0.0)
         west_wealth_out = max(wealth_flow, 0.0)
-        east_ratio = _value_ratio_for_side(east_food_in, east_food_out, east_wealth_in, east_wealth_out)
-        west_ratio = _value_ratio_for_side(west_food_in, west_food_out, west_wealth_in, west_wealth_out)
-        east_exploited = east_ratio < 0.7 and (east_food_out + east_wealth_out) > eps
-        west_exploited = west_ratio < 0.7 and (west_food_out + west_wealth_out) > eps
+        west_gold_in = gold_e2w
+        west_gold_out = gold_w2e
+        east_ratio = _value_ratio_for_side(
+            east_food_in, east_food_out, east_wealth_in, east_wealth_out, east_gold_in, east_gold_out
+        )
+        west_ratio = _value_ratio_for_side(
+            west_food_in, west_food_out, west_wealth_in, west_wealth_out, west_gold_in, west_gold_out
+        )
+        east_exploited = east_ratio < 0.7 and (east_food_out + east_wealth_out + east_gold_out) > eps
+        west_exploited = west_ratio < 0.7 and (west_food_out + west_wealth_out + west_gold_out) > eps
 
     if east_exploited and not trade_type.startswith("strongly_exploitative"):
         trade_type = "mildly_exploitative_for_east"
@@ -408,16 +547,28 @@ def run_negotiation(model: Any) -> None:
         "trade": {
             "food_from_east_to_west": food_flow,
             "wealth_from_west_to_east": wealth_flow,
+            "iron_from_east_to_west": iron_e2w,
+            "iron_from_west_to_east": iron_w2e,
+            "gold_from_east_to_west": gold_e2w,
+            "gold_from_west_to_east": gold_w2e,
             "reason": trade_reason,
         },
         "food_east_before": east_before["food"],
         "food_east_after": east_after["food"],
         "wealth_east_before": east_before["wealth"],
         "wealth_east_after": east_after["wealth"],
+        "iron_east_before": east_before.get("iron"),
+        "iron_east_after": east_after.get("iron"),
+        "gold_east_before": east_before.get("gold"),
+        "gold_east_after": east_after.get("gold"),
         "food_west_before": west_before["food"],
         "food_west_after": west_after["food"],
         "wealth_west_before": west_before["wealth"],
         "wealth_west_after": west_after["wealth"],
+        "iron_west_before": west_before.get("iron"),
+        "iron_west_after": west_after.get("iron"),
+        "gold_west_before": west_before.get("gold"),
+        "gold_west_after": west_after.get("gold"),
         "population_east": model.east.population,
         "population_west": model.west.population,
         "trade_type": trade_type,
@@ -439,9 +590,14 @@ def run_negotiation(model: Any) -> None:
         "west_before": west_before,
         "west_after": west_after,
     }
+    flow_bits = [f"flows(E->W food {food_flow}, W->E wealth {wealth_flow})"]
+    if iron_e2w or iron_w2e:
+        flow_bits.append(f"E->W iron {iron_e2w}, W->E iron {iron_w2e}")
+    if gold_e2w or gold_w2e:
+        flow_bits.append(f"E->W gold {gold_e2w}, W->E gold {gold_w2e}")
     summary_base = (
         f"Step {model.steps}: trade_type={trade_type}, relation={new_label}, "
-        f"flows(E->W food {food_flow}, W->E wealth {wealth_flow})"
+        + ", ".join(flow_bits)
     )
     model.leader_east.record_interaction(
         f'{summary_base}; West said "{entry.get("west_line", "")}".'

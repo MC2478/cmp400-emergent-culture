@@ -16,61 +16,48 @@ log = logging.getLogger(__name__)
 
 
 def summarise_memory_for_prompt(events: List[Dict[str, Any]], max_events: int = 10) -> str:
-    """Condense recent in-run memory events into a readable history for the LLM."""
+    """I summarise the last few memory events into short lines for the LLM prompt."""
     if not events:
         return "No previous steps in this run."
+
+    def _safe_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     recent = events[-max_events:]
     lines: list[str] = []
     for event in recent:
-        pop_before = float(event.get("pop_before", 0.0))
-        pop_after = float(event.get("pop_after", pop_before))
-        food_before = float(event.get("food_before", 0.0))
-        food_after = float(event.get("food_after", food_before))
-        wealth_before = float(event.get("wealth_before", 0.0))
-        wealth_after = float(event.get("wealth_after", wealth_before))
-        pop_delta = pop_after - pop_before
-        food_delta = food_after - food_before
-        wealth_delta = wealth_after - wealth_before
+        step = event.get("step", "?")
+        action = event.get("action") or event.get("action_name") or "unknown_action"
+        fb = _safe_float(event.get("food_before"))
+        fa = _safe_float(event.get("food_after"))
+        wb = _safe_float(event.get("wealth_before"))
+        wa = _safe_float(event.get("wealth_after"))
+        pb = _safe_float(event.get("pop_before"))
+        pa = _safe_float(event.get("pop_after"))
+        notes = event.get("notes") or event.get("note")
 
-        outcome_bits: list[str] = []
-        if event.get("starving"):
-            outcome_bits.append("people starved")
-        if event.get("strike"):
-            outcome_bits.append("workers on strike")
-        if pop_delta > 0:
-            outcome_bits.append(f"population grew by {int(round(pop_delta))}")
-        elif pop_delta < 0:
-            outcome_bits.append(f"population fell by {int(round(abs(pop_delta)))}")
-        if food_delta > 0:
-            outcome_bits.append(f"food +{food_delta:.2f}")
-        elif food_delta < 0:
-            outcome_bits.append(f"food {food_delta:.2f}")
-        if wealth_delta > 0:
-            outcome_bits.append(f"wealth +{wealth_delta:.2f}")
-        elif wealth_delta < 0:
-            outcome_bits.append(f"wealth {wealth_delta:.2f}")
-        note = event.get("note")
-        if note:
-            trimmed = str(note).strip()
-            if len(trimmed) > 160:
-                trimmed = trimmed[:157] + "..."
+        segments: list[str] = [f"Step {step}: action={action}"]
+        if fb is not None and fa is not None:
+            segments.append(f"food {fb:.2f}->{fa:.2f}")
+        if wb is not None and wa is not None:
+            segments.append(f"wealth {wb:.2f}->{wa:.2f}")
+        if pb is not None and pa is not None:
+            segments.append(f"pop {pb:.0f}->{pa:.0f}")
+        line = ", ".join(segments)
+        if notes:
+            trimmed = str(notes).strip()
             if trimmed:
-                outcome_bits.append(f"note: {trimmed}")
-
-        outcome = ", ".join(outcome_bits) if outcome_bits else "no major changes"
-        lines.append(
-            f"Step {event.get('step')}: action={event.get('action')}, "
-            f"food {food_before:.2f}->{food_after:.2f}, "
-            f"wealth {wealth_before:.2f}->{wealth_after:.2f}, "
-            f"pop {int(round(pop_before))}->{int(round(pop_after))} ({outcome})"
-        )
+                line = f"{line} ({trimmed})"
+        lines.append(line)
 
     return "\n".join(lines)
 
 
 # Mirror allowed actions locally to avoid circular imports.
-_WORK_ACTIONS: tuple[str, ...] = ("focus_food", "focus_wood", "focus_wealth")
+_WORK_ACTIONS: tuple[str, ...] = ("focus_food", "focus_wood", "focus_wealth", "focus_iron", "focus_gold")
 
 
 @dataclass

@@ -1,11 +1,12 @@
 # Purpose
 
-I simulate two asymmetric territories (East and West) to study emergent dynamics with an optional LM Studio-backed leader. Each territory tracks food, wealth, wood, population, infrastructure, and a shared diplomatic relationship score. Leaders either follow a rule-based fallback or query the LLM to pick actions, and every step is logged as JSON for later analysis.
+I simulate two asymmetric territories (East and West) to study emergent dynamics with an optional LM Studio-backed leader. Each territory tracks food, wealth, wood, population, infrastructure, and a shared diplomatic relationship score. Leaders either follow a rule-based fallback or query the LLM to pick actions, and every step is logged as JSON for later analysis. This feasibility slice only implements the bilateral world; the five-territory council and rotating kingship remain future work from the proposal.
 
 # Modules and Responsibilities
 
-- **main.py** - CLI entry point that builds `WorldModel`, advances it for the requested steps (or until collapse), saves/prints summaries, and tees console output to `logs/output_log_seed<seed>_steps<steps>[_runN].txt`.
-- **src/model/world_model.py** - Mesa model wiring that orchestrates phases (actions + negotiation + wages + upkeep + logging) using helper modules.
+- **main.py** - CLI entry point that builds `WorldModel`, opens per-leader JSONL logs plus a config summary inside a timestamped `logs/run_*` folder, advances the requested steps (or until collapse), saves/prints summaries, and tees console output to `logs/output_log_seed<seed>_steps<steps>[_runN].txt`.
+- **src/model/world_model.py** - Mesa model wiring that orchestrates phases (actions + negotiation + wages + upkeep + logging) using helper modules, tracks `current_step_log` for summaries, and exposes helpers like `enable_agent_state_logging()` and `log_agent_state()` so the run artefacts capture leader state.
+- **src/model/environment.py** - Deterministic, seed-driven environment generator that splits total yield budgets between East/West, hands out exclusive iron/gold mining rights, derives richness metrics, and tags each territory with a category used for starting trait selection.
 - **src/model/economy.py** - Wages, morale/strike handling, and population/upkeep helpers.
 - **src/model/diplomacy.py** - Negotiation orchestration, trade clamping/classification, relation scoring/labels, interaction logging.
 - **src/model/log_utils.py** - Chronicle append helpers and console summary formatting (ASCII bullets).
@@ -13,40 +14,50 @@ I simulate two asymmetric territories (East and West) to study emergent dynamics
 - **src/agents/production.py** - Work point/yield calculation and allocation application.
 - **src/model/llm_client.py** - LM Studio HTTP wrapper that calls prompt builders, parses JSON responses for both decisions and negotiations, and falls back safely.
 - **src/model/prompt_builder.py** / **parsers.py** - Prompt assembly and JSON coercion/validation utilities shared by the LLM client.
+- **src/model/traits.py** - Trait catalogue plus adaptation rules. Blends personality vectors, applies pressure-based auto-adjustments, tracks streaks, and parses LLM trait adjustment text into structured actions.
 - **config.py** - Central numeric knobs (starting resources, yields, infrastructure multipliers/costs, wages, population rules, rounding, seasons).
+
+# Run Artefacts & Logging
+
+- Every CLI invocation uses `_choose_run_artifact_path()` to create an isolated `logs/run_<timestamp>_seed<seed>_steps<steps>` directory that stores the chronicle JSON, per-leader agent-state JSONL files, a human-readable config summary, and a tee of console output.
+- `WorldModel.save_config_summary()` captures the sampled environment, asymmetric yields, infrastructure tiers, and allowed actions, so each run artifact bundles both behaviour and its knobs.
+- `WorldModel.enable_agent_state_logging()` + `log_agent_state()` write one JSON line per leader per step, including resource snapshots, trait state, pressure counters, memory metadata, and whether the LLM drove the decision.
+- `log_utils.print_step_summary()` emits the console summary and calls `append_chronicle_action()` / `append_chronicle_upkeep()` so the chronicle records actions, negotiations, trait events, wage/upkeep outcomes, and relation changes for later analysis.
 
 # Resources and State
 
 - **Food** - Produced via work allocations and season-adjusted yields; consumed every upkeep step.
 - **Wealth** - Earned via work allocations and trade; spent on wages, infrastructure, and buffers.
 - **Wood** - Gathered via `focus_wood`; consumed (with wealth) to raise infrastructure.
+- **Iron** - Only one territory in a run can mine iron; the other must trade for it if they want the mid-tier infrastructure bonus, and even the gold-holder must import iron before a top-tier upgrade.
+- **Gold** - The complementary territory mines gold; it powers the most advanced infrastructure tier and never spawns alongside iron locally, so whichever side starts with gold needs diplomacy or trade routes to gather the iron prerequisite.
 - **Population** - Drives work points. When food covers the quota, population grows by `POP_GROWTH_RATE`; deficits shrink it by `POP_LOSS_RATE_PER_MISSING_FOOD` per missing food unit (capped at 90% loss per tick).
-- **Infrastructure level (`infra`)** - Multiplies food/wood/wealth yields per work point. Raising infra costs `INFRA_COST_WOOD` wood and `INFRA_COST_WEALTH` wealth.
+- **Infrastructure level (`infra`)** - Multiplies all per-work yields; each point adds +10% to every resource.
 - **Relation score/label** - Shared diplomatic status between East and West (float -2..2), adjusted after each negotiation.
 - **Seasons** - Spring + summer + autumn + winter; each season lasts two steps and modifies food/wood yields via `SEASON_MULTIPLIERS`.
 
 # Actions
 
-- **Work allocations (`focus_food`, `focus_wood`, `focus_wealth`)** - Leaders split fractional work points across these options in a single step. Shares are clamped to [0, 1]; if they sum above 1.0 they are normalised to 1.0. Unused share idles. Each share uses infra- and season-adjusted yields, so mixes are allowed (e.g., 0.6 food + 0.4 wealth).
-- **`build_infrastructure` flag** - Independent of the work split. If `INFRA_COST_WOOD` wood and `INFRA_COST_WEALTH` wealth are on hand, the upgrade happens immediately; otherwise the log records the shortfall and only production applies.
+- **Work allocations (`focus_food`, `focus_wood`, `focus_wealth`, `focus_iron`, `focus_gold`)** - Leaders split fractional work points across these options in a single step. Shares are clamped to [0, 1]; if they sum above 1.0 they are normalised to 1.0. Unused share idles. Each share uses infra- and season-adjusted yields (iron/gold ignore seasons), so mixes are allowed (e.g., 0.6 food + 0.2 wood + 0.2 iron).
+- **`build_infrastructure` flag** - Independent of the work split. Setting it to true spends the strongest tier you can afford: 5 wood + 2 wealth for +10%, 5 iron + 5 wealth for +20%, or 5 gold + 5 iron for +30%.
 - **`wait`** - Implicit when no allocations/build are provided.
 
-Infrastructure bonuses are multiplicative: each level adds `INFRA_*_YIELD_MULT_PER_LEVEL` to the respective yields.
+Infrastructure bonuses are multiplicative: each point adds `0.1` to all per-work yields. Every upgrade consumes exactly one tier (wood/iron/gold) per step, always buying the highest tier you can pay for.
 
 # Turn Structure (per step)
 
-1. **Actions** - Both leaders act (LLM-first, heuristic fallback) using the current season multipliers, yields, morale, and priority hint.
+1. **Actions** - At the start of each leader step we tick trait cooldowns and, if `exploitation` / `starvation` / `failed_strategy` streaks exceed the pressure threshold, `apply_pressure_adaptation()` can auto-add/remove traits before the decision is made. Both leaders then act (LLM-first, heuristic fallback) using the current season multipliers, yields, morale, and priority hint.
 2. **Negotiation (LLM only)** - Runs every step when the LLM is enabled. A short dialogue (up to three exchanges per side) plus trade flows are generated, clamped to available resources, classified (gift/balanced/exploitative), and used to update the shared relation score/label.
 3. **Wages & morale** - Wage bill per worker (`WAGE_PER_WORKER`) is deducted. Partial payment accumulates `unpaid_steps`; reaching `STRIKE_THRESHOLD_STEPS` puts workers on strike with `STRIKE_MULTIPLIER` output. Partial payments soften debt and morale uses `LOW_MORALE_MULTIPLIER` when underpaid.
 4. **Upkeep & population** - Food requirement is `(population / 10) * FOOD_PER_10_POP`. Paying it consumes food and grows population by `POP_GROWTH_RATE`; deficits consume all food and cut population by `deficit * POP_LOSS_RATE_PER_MISSING_FOOD` (max 90% per step). Wealth/wood are floored at zero.
-5. **Logging** - Action (allocations, infra attempt), negotiation, wages, and upkeep are appended to the chronicle and printed with `POP_DISPLAY_DECIMALS` / `RESOURCE_DISPLAY_DECIMALS` rounding. Console output is teed per run into `logs/output_log_seed<seed>_steps<steps>[_runN].txt`.
+5. **Logging** - Action (allocations, infra attempt), negotiation, wages, and upkeep are appended to the chronicle and printed with `POP_DISPLAY_DECIMALS` / `RESOURCE_DISPLAY_DECIMALS` rounding. Each leader's decision is mirrored into its agent-state JSONL file, and console output is teed per run into `logs/output_log_seed<seed>_steps<steps>[_runN].txt`.
 6. **Termination** - `WorldModel.all_territories_dead()` stops the run early once both populations hit zero.
 
 # Seeded Environment & Starting Traits
 
-- Every `WorldModel` draws an environment from the world seed: total food/wealth/wood yield budgets are sampled within modest bounds and split asymmetrically between East/West. Starting food/wealth/wood are also jittered within capped ranges.
-- Default runs now let the seed pick starting food; passing `initial_food` overrides it for quick CLI tweaks.
-- Each territory gets an environment label (`food_rich`, `wealth_rich`, `scarce`, `balanced`) from its richness metrics. A probabilistic map per label picks an initial trait (e.g., wealth-rich leans `Wealth-hoarder`, food-rich leans `Friendly`/`Food-secure`, scarce can choose `Aggressive`/`Food-secure`/`Isolationist`). Initial traits are deterministic for a given seed via the shared RNG.
+- Every `WorldModel` draws an `EnvironmentSnapshot` from the world seed: total food/wealth/wood/iron/gold budgets are sampled within modest bounds, split asymmetrically by `_split_budget()`, and one side receives all iron mining while the other receives all gold. Starting food/wealth/wood/metal stores are jittered within capped ranges, and the snapshot records which side owns each metal for later logging.
+- Default runs now let the seed pick starting food; passing `initial_food` overrides both East and West for quick CLI tweaks while keeping the seed-determined yields.
+- Each territory gets an environment label (`food_rich`, `wealth_rich`, `scarce`, `balanced`) from its richness metrics. `sample_starting_trait()` uses that label plus the shared RNG to pick an initial trait (e.g., wealth-rich leans `Wealth-hoarder`, food-rich leans `Friendly`/`Food-secure`, scarce can choose `Aggressive`/`Food-secure`/`Isolationist`). Because the RNG comes from the Mesa model, initial traits are deterministic for a given seed.
 
 # Personality & Trait System
 
@@ -59,16 +70,18 @@ Infrastructure bonuses are multiplicative: each level adds `INFRA_*_YIELD_MULT_P
   - **Opportunistic**: high risk_tolerance/adaptability; pivots quickly to openings.
   - **Isolationist** (incompatible with `Friendly`): low cooperation/trust, modest aggression; prefers minimal trade.
 - Trait changes only influence LLM prompts (decision + negotiation). Traits blend into the personality vector with `TRAIT_ADAPTATION_ALPHA`, resolve incompatibilities, and respect `TRAIT_MAX_ACTIVE` and `TRAIT_COOLDOWN_STEPS`.
-- Leaders track `exploitation_streak` (exploitative trade victim) and `starvation_streak` (food_safety_ratio < 1). When either hits `TRAIT_CHANGE_PRESSURE_THRESHOLD` and cooldown is zero, an adaptation pressure note is surfaced in the next decision prompt.
-- Decision prompt JSON now includes `"trait_adjustment"`; free-text suggestions are parsed to add/remove traits or nudge dimensions (risk, food/wealth focus, cooperation/trust) within cooldown limits.
-- Relation score changes are lightly modulated by personality (aggression/cooperation/trust tilt the magnitude). Logs and console summaries show active traits, cooldown, streaks, and per-step trait events.
+- Leaders track `exploitation_streak` (being on the losing end of exploitative trades), `starvation_streak` (food_safety_ratio < 1 before upkeep), and `failed_strategy_streak` (repeating similar allocations without improving population or wealth). `_update_strategy_pressure()` runs after upkeep to detect the stagnation case by comparing the latest allocations against the previous mix.
+- When any streak hits `TRAIT_CHANGE_PRESSURE_THRESHOLD` and cooldown is zero, `apply_pressure_adaptation()` can auto-remove conflicting traits, add new ones, and nudge dimensions (e.g., dial up aggression after exploitation). Each auto-change is stored in `trait_events`, mirrored to the chronicle, and surfaced as an `adaptation_pressure_note` in the next prompt so the LLM knows why the shift occurred.
+- Decision prompt JSON now includes `"trait_adjustment"`; free-text suggestions are parsed to add/remove traits or nudge dimensions (risk, food/wealth focus, cooperation/trust/adaptability) within cooldown limits, and any resulting events are also logged.
+- Relation score changes are lightly modulated by personality (aggression/cooperation/trust tilt the magnitude). Logs, agent-state JSONL files, and console summaries show active traits, cooldown, streaks, pressure notes, and per-step trait events.
 
 # Leader Memory & Adaptation
 
 - Each leader keeps a capped in-run memory of recent steps (action, food/wealth/pop deltas, starvation, strikes, notes) plus a small interaction log of past negotiations for prompts.
 - After every action the LLM writes a short directive for its future self; that text seeds the next prompt so the leader can build on its own plan.
-- Decision and negotiation prompts embed the summarised history, latest directive, recent interactions, and the priority hint.
-- Nothing persists between runs; memory resets when a new `WorldModel` is constructed. Survival depends on on-run history plus current metrics.
+- `_record_leader_memories()` also tracks starvation/strike pressure, last reasons, and infrastructure failures so the next prompt can reflect those stresses; the same snapshot is mirrored to `logs/run_*/<territory>_agent_state.jsonl`.
+- Decision and negotiation prompts embed the summarised history, latest directive, recent interactions, the priority hint, and any adaptation pressure text so the LLM can justify strategic pivots.
+- Nothing persists between runs; memory resets when a new `WorldModel` is constructed. Survival depends on on-run history plus current metrics logged inside each run artifact.
 
 # Decision & Priority Heuristics
 
@@ -79,12 +92,13 @@ Before querying the LLM, the leader computes a `priority_hint`:
 - Prompts explicitly encourage uneven splits (e.g., 0.6/0.3/0.1) when circumstances differ instead of falling back to repetitive 50/50 mixes.
 - Leaders are reminded their primary duty is to their own citizens; aid/cooperation must be justified by trust (cordial/allied), reciprocity, or clear concessions. Neutral/strained stances default to caution.
 
-If the LLM returns malformed JSON or an unknown action, I fall back to a simple heuristic: focus on food if `food_safety_ratio < 1`, otherwise build infrastructure when affordable and infra < 3, otherwise focus on wealth. Valid LLM decisions are never overridden.
+If the LLM returns malformed JSON or an unknown action, I fall back to a simple heuristic: focus on food if `food_safety_ratio < 1`, otherwise build infrastructure when affordable and infra < 3, otherwise focus on wealth. Valid LLM decisions are never overridden, but `_maybe_force_infrastructure()` can flip the build flag on when buffers are strong, infra < 5, and a tier is affordable so obvious upgrades still happen.
 
 # LLM vs. Heuristic Control
 
-- The LLM is the primary decision-maker for actions and negotiations. Prompts include territory history, current metrics, relation status, the last self-authored directive, interaction log, and reminders that collapse is final; negotiation prompts surface food safety and stance cues.
-- Negotiation uses two calls: first to draft an alternating dialogue, then to settle a trade consistent with that transcript; validation re-clamps flows, accepts explicit zero-trade outcomes, respects sender safety buffers, blocks uphill gifts when the donor is not safer, and only nudges direction when a non-zero trade is proposed. Relation shifts are slower (float score +/-0.25 across -2..2). Failed or malformed responses fall back to a no-trade default.
+- The LLM is the primary decision-maker for actions and negotiations. Prompts include territory history, current metrics, relation status, the last self-authored directive, interaction log, and reminders that collapse is final; negotiation prompts surface food safety, stance cues, and trait-derived negotiation styles.
+- Negotiation uses two calls: first to draft an alternating dialogue, then to settle a trade consistent with that transcript. Validation re-clamps flows, accepts explicit zero-trade outcomes, blocks uphill gifts when the donor is not safer, injects safe token gifts when the dialogue explicitly promises them, and only nudges direction when a non-zero trade was proposed. Relation shifts are slower (float score +/-0.25 across -2..2) and are further modulated by each side's personality vector; the module also classifies trades (gift/balanced/exploitative), updates exploitation streak counters, and keeps `other_trait_notes` in sync for logging.
+- `LLMDecisionClient` sanitises JSON, retries once with clearer instructions, scans text for action hints if JSON parsing fails, and falls back to the heuristic policy when the service is unreachable; `_fallback_decision()` still emits a `trait_adjustment` string so the logs explain why the heuristic acted.
 
 # Key Tunable Parameters (config.py)
 
@@ -93,7 +107,7 @@ If the LLM returns malformed JSON or an unknown action, I fall back to a simple 
 - `PEOPLE_PER_WORK_POINT` - People per work point (200). Work points are fractional and scaled by morale.
 - `FOOD_PER_10_POP`, `POP_GROWTH_RATE`, `POP_LOSS_RATE_PER_MISSING_FOOD` - Food requirement and percentage growth/loss rules (0.05 food per 10 pop; +/-10% growth/loss factor per unit deficit, capped at 90% loss per step).
 - `FOOD_PER_WORK_BASE`, `WOOD_PER_WORK_BASE`, `WEALTH_PER_WORK_BASE`, `INFRA_*_YIELD_MULT_PER_LEVEL` - Base yields and infra bonuses per level (food/wood +0.10, wealth +0.05).
-- `INFRA_COST_WOOD`, `INFRA_COST_WEALTH` - Build costs (5 wood, 2 wealth).
+- Tiered infrastructure costs: wood tier (5 wood + 2 wealth, +1 point), iron tier (5 iron + 5 wealth, +2 points), gold tier (5 gold + 5 iron, +3 points). Only one territory starts with iron and the other with gold each run.
 - `FOOD_SAFETY_HORIZON_STEPS`, `FOOD_SAFETY_GOOD_RATIO`, `NON_FOOD_MIN_FRACTION` - Parameters driving the priority hint shared with the LLM.
 - `WAGE_PER_WORKER`, `STRIKE_THRESHOLD_STEPS`, `LOW_MORALE_MULTIPLIER`, `STRIKE_MULTIPLIER`, `PARTIAL_PAY_RECOVERY` - Wage per worker (0.1), unpaid debt threshold (4 steps) for strikes, and morale multipliers.
 - `POP_DISPLAY_DECIMALS`, `RESOURCE_DISPLAY_DECIMALS` - Console rounding for population/resources.

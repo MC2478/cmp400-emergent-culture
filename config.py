@@ -18,19 +18,32 @@ WEST_WOOD_YIELD: float = 1.0
 
 # --- Infrastructure & yields ---
 
-# Food/wood/wealth yield per work point before infra bonuses
+# Food/wood/wealth/iron/gold yield per work point before infra bonuses
 FOOD_PER_WORK_BASE: float = 1.0
 WOOD_PER_WORK_BASE: float = 1.1
 WEALTH_PER_WORK_BASE: float = 1.0
+IRON_PER_WORK_BASE: float = 1.0
+GOLD_PER_WORK_BASE: float = 0.7
 
-# Multiplicative infra bonus per level
+# Multiplicative infra bonus per level (each point adds +10%)
 INFRA_FOOD_YIELD_MULT_PER_LEVEL: float = 0.10
 INFRA_WOOD_YIELD_MULT_PER_LEVEL: float = 0.10
-INFRA_WEALTH_YIELD_MULT_PER_LEVEL: float = 0.05
+INFRA_WEALTH_YIELD_MULT_PER_LEVEL: float = 0.10
+INFRA_IRON_YIELD_MULT_PER_LEVEL: float = 0.10
+INFRA_GOLD_YIELD_MULT_PER_LEVEL: float = 0.10
 
-# Infrastructure build costs
-INFRA_COST_WOOD: float = 5.0
-INFRA_COST_WEALTH: float = 2.0
+# Tiered infrastructure costs (+10% per point)
+INFRA_TIER_WOOD_WOOD_COST: float = 5.0
+INFRA_TIER_WOOD_WEALTH_COST: float = 2.0
+INFRA_TIER_WOOD_POINTS: int = 1
+
+INFRA_TIER_IRON_IRON_COST: float = 5.0
+INFRA_TIER_IRON_WEALTH_COST: float = 5.0
+INFRA_TIER_IRON_POINTS: int = 2
+
+INFRA_TIER_GOLD_GOLD_COST: float = 5.0
+INFRA_TIER_GOLD_IRON_COST: float = 5.0
+INFRA_TIER_GOLD_POINTS: int = 3
 
 # Population and upkeep
 PEOPLE_PER_WORK_POINT: int = 200
@@ -83,6 +96,12 @@ ENV_TOTAL_WEALTH_YIELD_MIN: float = 1.7
 ENV_TOTAL_WEALTH_YIELD_MAX: float = 2.3
 ENV_TOTAL_WOOD_YIELD_MIN: float = 1.7
 ENV_TOTAL_WOOD_YIELD_MAX: float = 2.3
+ENV_TOTAL_IRON_YIELD_MIN: float = 0.5
+ENV_TOTAL_IRON_YIELD_MAX: float = 2.0
+ENV_TOTAL_GOLD_YIELD_MIN: float = 0.3
+ENV_TOTAL_GOLD_YIELD_MAX: float = 1.5
 ENV_STARTING_FOOD_RANGE: tuple[float, float] = (2.0, 4.5)
 ENV_STARTING_WEALTH_RANGE: tuple[float, float] = (4.0, 6.5)
 ENV_STARTING_WOOD_RANGE: tuple[float, float] = (0.0, 2.0)
+ENV_STARTING_IRON_RANGE: tuple[float, float] = (0.0, 1.5)
+ENV_STARTING_GOLD_RANGE: tuple[float, float] = (0.0, 1.0)
