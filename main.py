@@ -70,6 +70,7 @@ def run_demo(
     )
     # I snapshot the current configuration so I can review the key knobs alongside each run.
     config_path = _choose_run_artifact_path("config_summary", config.seed, config.steps, ".txt")
+    model.enable_agent_state_logging(config_path.parent)
     model.save_config_summary(str(config_path))
 
     for _ in range(config.steps):
@@ -79,6 +80,7 @@ def run_demo(
             print(f"All territories have collapsed by step {model.steps}. Ending simulation early.")
             break
 
+    model.close_agent_state_logs()
     if save_log:
         # I persist the chronicle to share the structured trace in the feasibility report.
         out_path = config.chronicle_path()

@@ -10,8 +10,15 @@ import mesa
 
 from config import (
     FOOD_PER_10_POP,
-    INFRA_COST_WOOD,
-    INFRA_COST_WEALTH,
+    INFRA_TIER_WOOD_WOOD_COST,
+    INFRA_TIER_WOOD_WEALTH_COST,
+    INFRA_TIER_WOOD_POINTS,
+    INFRA_TIER_IRON_IRON_COST,
+    INFRA_TIER_IRON_WEALTH_COST,
+    INFRA_TIER_IRON_POINTS,
+    INFRA_TIER_GOLD_GOLD_COST,
+    INFRA_TIER_GOLD_IRON_COST,
+    INFRA_TIER_GOLD_POINTS,
     FOOD_SAFETY_HORIZON_STEPS,
     FOOD_SAFETY_GOOD_RATIO,
     NON_FOOD_MIN_FRACTION,
@@ -29,8 +36,25 @@ from src.model.traits import (
 )
 
 # I centralise the rule set here so both the LLM and rule-based flows share the same vocabulary.
-WORK_ACTIONS: set[str] = {"focus_food", "focus_wood", "focus_wealth"}
+WORK_ACTIONS: set[str] = {"focus_food", "focus_wood", "focus_wealth", "focus_iron", "focus_gold"}
 ALLOWED_ACTIONS: set[str] = set(WORK_ACTIONS) | {"build_infrastructure", "wait"}
+INFRA_TIER_SEQUENCE: tuple[tuple[str, Dict[str, float], int], ...] = (
+    (
+        "gold",
+        {"gold": INFRA_TIER_GOLD_GOLD_COST, "iron": INFRA_TIER_GOLD_IRON_COST},
+        INFRA_TIER_GOLD_POINTS,
+    ),
+    (
+        "iron",
+        {"iron": INFRA_TIER_IRON_IRON_COST, "wealth": INFRA_TIER_IRON_WEALTH_COST},
+        INFRA_TIER_IRON_POINTS,
+    ),
+    (
+        "wood",
+        {"wood": INFRA_TIER_WOOD_WOOD_COST, "wealth": INFRA_TIER_WOOD_WEALTH_COST},
+        INFRA_TIER_WOOD_POINTS,
+    ),
+)
 
 
 @dataclass
@@ -47,6 +71,10 @@ class TerritoryState:
     wealth_yield: float = 1.0
     wood: float = 0.0
     wood_yield: float = 1.0
+    iron: float = 0.0
+    iron_yield: float = 0.0
+    gold: float = 0.0
+    gold_yield: float = 0.0
     infrastructure_level: int = 0
     effective_work_multiplier: float = 1.0
     unpaid_steps: int = 0
@@ -96,7 +124,7 @@ class LeaderAgent(mesa.Agent):
         self.next_directive: str = "Stabilise food and explore opportunities."
         self.interaction_log: List[str] = []
         self.max_interactions: int = 8
-        self.last_trait_adjustment: Optional[str] = None
+        self.last_trait_adjustment_text: str = "no change"
 
     def _required_food(self) -> float:
         """I compute the granular food requirement using the shared config."""
@@ -131,6 +159,8 @@ class LeaderAgent(mesa.Agent):
             "food": self.territory.food,
             "wealth": self.territory.wealth,
             "wood": self.territory.wood,
+            "iron": self.territory.iron,
+            "gold": self.territory.gold,
             "relation_to_neighbor": self.territory.relation_to_neighbor,
             "relation_score": self.territory.relation_score,
             "population": self.territory.population,
@@ -145,6 +175,8 @@ class LeaderAgent(mesa.Agent):
             "neighbor_wealth": neighbor.wealth if neighbor else None,
             "neighbor_population": neighbor.population if neighbor else None,
             "neighbor_wood": neighbor.wood if neighbor else None,
+            "neighbor_iron": neighbor.iron if neighbor else None,
+            "neighbor_gold": neighbor.gold if neighbor else None,
             "personality_vector": dict(self.territory.personality_vector),
             "active_traits": list(self.territory.active_traits),
             "trait_cooldown_steps": self.territory.trait_cooldown_steps,
@@ -167,6 +199,8 @@ class LeaderAgent(mesa.Agent):
             "food": self.territory.food,
             "wealth": self.territory.wealth,
             "wood": self.territory.wood,
+            "iron": self.territory.iron,
+            "gold": self.territory.gold,
             "relation_to_neighbor": self.territory.relation_to_neighbor,
             "relation_score": self.territory.relation_score,
             "population": self.territory.population,
@@ -196,6 +230,8 @@ class LeaderAgent(mesa.Agent):
                     "neighbor_wealth": self.neighbor.wealth,
                     "neighbor_population": self.neighbor.population,
                     "neighbor_wood": self.neighbor.wood,
+                    "neighbor_iron": self.neighbor.iron,
+                    "neighbor_gold": self.neighbor.gold,
                 }
             )
         else:
@@ -206,6 +242,8 @@ class LeaderAgent(mesa.Agent):
                     "neighbor_wealth": None,
                     "neighbor_population": None,
                     "neighbor_wood": None,
+                    "neighbor_iron": None,
+                    "neighbor_gold": None,
                 }
             )
         state["history_text"] = summarise_memory_for_prompt(self.memory_events)
@@ -215,45 +253,80 @@ class LeaderAgent(mesa.Agent):
         self,
         *,
         step: int,
-        action: str,
+        action_name: str,
         food_before: float,
         food_after: float,
         wealth_before: float,
         wealth_after: float,
         pop_before: float,
         pop_after: float,
-        starving: bool,
-        strike: bool,
-        note: str | None = None,
+        notes: str | None = None,
     ) -> None:
-        """I store a structured in-run memory event for later prompt summaries."""
+        """I record a compact snapshot of the latest step, keeping only the freshest few events."""
+
+        def _safe_float(value: Any) -> float | None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _safe_int(value: Any) -> int | None:
+            try:
+                return int(round(float(value)))
+            except (TypeError, ValueError):
+                return None
+
+        trimmed_notes = (notes or "").strip()
         event: Dict[str, Any] = {
             "step": step,
-            "action": action,
-            "food_before": food_before,
-            "food_after": food_after,
-            "wealth_before": wealth_before,
-            "wealth_after": wealth_after,
-            "pop_before": pop_before,
-            "pop_after": pop_after,
-            "starving": starving,
-            "strike": strike,
+            "action": action_name or "unknown_action",
+            "food_before": _safe_float(food_before),
+            "food_after": _safe_float(food_after),
+            "wealth_before": _safe_float(wealth_before),
+            "wealth_after": _safe_float(wealth_after),
+            "pop_before": _safe_int(pop_before),
+            "pop_after": _safe_int(pop_after),
         }
-        if note:
-            event["note"] = note
-
+        if trimmed_notes:
+            event["notes"] = trimmed_notes
         self.memory_events.append(event)
         if len(self.memory_events) > self.max_memory_events:
             self.memory_events.pop(0)
 
     def record_interaction(self, summary: str) -> None:
-        """I keep a short log of notable diplomatic interactions."""
+        """I keep a short log of recent diplomatic interactions so I can show the LLM how talks went."""
         summary = (summary or "").strip()
         if not summary:
             return
         self.interaction_log.append(summary)
         if len(self.interaction_log) > self.max_interactions:
             self.interaction_log.pop(0)
+
+    def set_next_directive(self, directive: str | None) -> None:
+        """I store the LLM's latest self-authored directive for the next prompt."""
+        text = (directive or "").strip()
+        if not text:
+            return
+        self.next_directive = text
+
+    def _best_affordable_infra_tier(self) -> tuple[str, Dict[str, float], int] | None:
+        """I select the highest infrastructure tier I can afford this step."""
+        for tier_name, costs, points in INFRA_TIER_SEQUENCE:
+            if all(getattr(self.territory, resource) >= amount for resource, amount in costs.items()):
+                return tier_name, costs, points
+        return None
+
+    def _infra_shortfall_text(self) -> str:
+        """I describe why even the basic wood tier is unaffordable."""
+        lowest_costs = INFRA_TIER_SEQUENCE[-1][1]
+        missing: list[str] = []
+        for resource, amount in lowest_costs.items():
+            current = getattr(self.territory, resource)
+            if current < amount:
+                missing.append(f"{resource} {current:.2f}/{amount:.2f}")
+        if not missing:
+            missing.append("metals unavailable")
+        return ", ".join(missing)
 
     def _trait_snapshot(self) -> Dict[str, Any]:
         """I expose trait state for logging."""
@@ -269,6 +342,30 @@ class LeaderAgent(mesa.Agent):
             "adaptation_pressure": self.territory.adaptation_pressure_note,
         }
 
+    def _prepare_allocations(self, decision: Dict[str, Any]) -> tuple[Dict[str, float], str]:
+        """Filter requested allocations and fall back to a legacy action when needed."""
+        allocations_raw = decision.get("allocations") or {}
+        sanitized: Dict[str, float] = {}
+        if isinstance(allocations_raw, dict):
+            for key, value in allocations_raw.items():
+                if key not in WORK_ACTIONS:
+                    continue
+                try:
+                    share = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if share <= 0:
+                    continue
+                sanitized[key] = share
+
+        total_share = sum(sanitized.values())
+        if total_share > 1.0 and total_share > 0:
+            sanitized = {k: v / total_share for k, v in sanitized.items()}
+        legacy_action = (decision.get("legacy_action") or decision.get("action") or "").lower()
+        if not sanitized and legacy_action in WORK_ACTIONS:
+            sanitized = {legacy_action: 1.0}
+        return sanitized, legacy_action
+
     def _fallback_action(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """I choose a simple action when the LLM response is unusable."""
         hint = state.get("priority_hint", {})
@@ -276,16 +373,12 @@ class LeaderAgent(mesa.Agent):
         infra_level = state.get("infra", 0)
         plan: Dict[str, float] = {}
         build_flag = False
+        tier_info = self._best_affordable_infra_tier()
         if ratio < 1.0:
             plan["focus_food"] = 1.0
-        elif (
-            ratio >= FOOD_SAFETY_GOOD_RATIO
-            and infra_level < 2
-            and self.territory.wood >= INFRA_COST_WOOD
-            and self.territory.wealth >= INFRA_COST_WEALTH
-        ):
+        elif ratio >= FOOD_SAFETY_GOOD_RATIO and tier_info:
             build_flag = True
-        elif ratio >= FOOD_SAFETY_GOOD_RATIO and infra_level < 2:
+        elif ratio >= FOOD_SAFETY_GOOD_RATIO and tier_info is None:
             plan["focus_wood"] = 0.6
             plan["focus_wealth"] = 0.4
         elif ratio < FOOD_SAFETY_GOOD_RATIO:
@@ -300,31 +393,33 @@ class LeaderAgent(mesa.Agent):
             "trait_adjustment": "no change",
         }
 
+    def _maybe_force_infrastructure(self, decision: Dict[str, Any], state: Dict[str, Any]) -> None:
+        """I opportunistically flip build_infrastructure on when buffers are healthy but the LLM declines."""
+        if decision.get("build_infrastructure"):
+            return
+        hint = state.get("priority_hint") or {}
+        ratio = float(hint.get("food_safety_ratio", 0.0) or 0.0)
+        if ratio < 1.1:
+            return
+        level = self.territory.infrastructure_level
+        if level >= 5:
+            return
+        tier_info = self._best_affordable_infra_tier()
+        if tier_info is None:
+            return
+        decision["build_infrastructure"] = True
+        decision.setdefault(
+            "reason",
+            "Auto-build trigger: buffers are healthy so I am investing in infrastructure now.",
+        )
+
     def decide_rule_based(self) -> Dict[str, Any]:
         """I fall back to the heuristic action when the LLM output is invalid."""
         return self._fallback_action(self._state_dict())
 
     def apply_action(self, decision: Dict[str, Any]) -> None:
         """I mutate the territory state according to the chosen action."""
-        allocations_raw = decision.get("allocations") or {}
-        sanitized: Dict[str, float] = {}
-        if isinstance(allocations_raw, dict):
-            for key, value in allocations_raw.items():
-                if key not in WORK_ACTIONS:
-                    continue
-                try:
-                    share = float(value)
-                except (TypeError, ValueError):
-                    continue
-                if share <= 0:
-                    continue
-                sanitized[key] = share
-        total_share = sum(sanitized.values())
-        if total_share > 1.0 and total_share > 0:
-            sanitized = {k: v / total_share for k, v in sanitized.items()}
-        legacy_action = (decision.get("legacy_action") or decision.get("action") or "").lower()
-        if not sanitized and legacy_action in WORK_ACTIONS:
-            sanitized = {legacy_action: 1.0}
+        sanitized, legacy_action = self._prepare_allocations(decision)
 
         season = self.model.current_season()
         produced = apply_allocations(self.territory, sanitized, season, self.model.season_multipliers)
@@ -336,29 +431,26 @@ class LeaderAgent(mesa.Agent):
 
         wants_build = bool(decision.get("build_infrastructure"))
         action_label = "mixed_allocation" if sanitized else (legacy_action or "wait")
+        decision["infrastructure_tier"] = None
+        decision["infra_points_gained"] = 0
         if wants_build or action_label == "build_infrastructure":
-            wood_available = self.territory.wood
-            wealth_available = self.territory.wealth
-            can_build = (
-                wood_available >= INFRA_COST_WOOD
-                and wealth_available >= INFRA_COST_WEALTH
-            )
-            if can_build:
-                self.territory.wood -= INFRA_COST_WOOD
-                self.territory.wealth -= INFRA_COST_WEALTH
-                self.territory.infrastructure_level += 1
-                decision["infrastructure_built"] = True
-            else:
-                shortfalls: list[str] = []
-                if wood_available < INFRA_COST_WOOD:
-                    shortfalls.append(f"wood {wood_available:.2f}/{INFRA_COST_WOOD:.2f}")
-                if wealth_available < INFRA_COST_WEALTH:
-                    shortfalls.append(f"wealth {wealth_available:.2f}/{INFRA_COST_WEALTH:.2f}")
-                shortage_text = ", ".join(shortfalls) if shortfalls else "insufficient resources"
-                decision["reason"] = (
-                    f"Attempted build_infrastructure but lacked {shortage_text}; idling."
-                )
+            tier_info = self._best_affordable_infra_tier()
+            if tier_info is None:
                 decision["infrastructure_built"] = False
+                shortage_text = self._infra_shortfall_text()
+                decision.setdefault(
+                    "reason",
+                    f"Attempted build_infrastructure but lacked {shortage_text}; idling.",
+                )
+            else:
+                tier_name, costs, points = tier_info
+                for resource, amount in costs.items():
+                    current = getattr(self.territory, resource)
+                    setattr(self.territory, resource, current - amount)
+                self.territory.infrastructure_level += points
+                decision["infrastructure_built"] = True
+                decision["infrastructure_tier"] = tier_name
+                decision["infra_points_gained"] = points
         else:
             decision["infrastructure_built"] = False
 
@@ -434,11 +526,13 @@ class LeaderAgent(mesa.Agent):
             decision = self._fallback_action(state_payload)
             llm_used = False
 
+        self._maybe_force_infrastructure(decision, state_payload)
         directive = decision.get("next_prompt")
-        if isinstance(directive, str) and directive.strip():
-            self.next_directive = directive.strip()
+        if isinstance(directive, str):
+            self.set_next_directive(directive)
 
         trait_adjust_text = str(decision.get("trait_adjustment", "")).strip()
+        self.last_trait_adjustment_text = trait_adjust_text or "no change"
         self._apply_trait_adjustment_text(trait_adjust_text)
         decision["trait_events"] = list(self.territory.trait_events)
         decision["trait_state"] = self._trait_snapshot()
@@ -453,6 +547,7 @@ class LeaderAgent(mesa.Agent):
             after=state_after,
             used_llm=llm_used,
         )
+        self.model.log_agent_state(self, decision, llm_used)
 
     def _apply_trait_adjustment_text(self, text: str) -> None:
         """I interpret and apply trait adjustments when cooldown allows."""
@@ -466,7 +561,7 @@ class LeaderAgent(mesa.Agent):
             reason_prefix=f"LLM prompt: {text}" if text else "LLM prompt",
         )
         if events:
-            self.last_trait_adjustment = text or "applied actions"
+            self.last_trait_adjustment_text = text or "applied actions"
             for ev in events:
                 self.model.chronicle.append(
                     {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TextIO
 
 import mesa
 
@@ -38,24 +38,32 @@ class WorldModel(mesa.Model):
             name="East",
             food=starting_food_east,
             wealth=starting_wealth_east,
+            iron=east_env.starting_iron,
+            gold=east_env.starting_gold,
             relation_to_neighbor="neutral",
             population=config.STARTING_POPULATION,
             food_yield=east_env.food_yield,
             wealth_yield=east_env.wealth_yield,
             wood=east_env.starting_wood,
             wood_yield=east_env.wood_yield,
+            iron_yield=east_env.iron_yield,
+            gold_yield=east_env.gold_yield,
             infrastructure_level=config.STARTING_INFRASTRUCTURE_LEVEL,
         )
         self.west = TerritoryState(
             name="West",
             food=starting_food_west,
             wealth=starting_wealth_west,
+            iron=west_env.starting_iron,
+            gold=west_env.starting_gold,
             relation_to_neighbor="neutral",
             population=config.STARTING_POPULATION,
             food_yield=west_env.food_yield,
             wealth_yield=west_env.wealth_yield,
             wood=west_env.starting_wood,
             wood_yield=west_env.wood_yield,
+            iron_yield=west_env.iron_yield,
+            gold_yield=west_env.gold_yield,
             infrastructure_level=config.STARTING_INFRASTRUCTURE_LEVEL,
         )
         self.seasons = list(config.SEASONS)
@@ -81,6 +89,7 @@ class WorldModel(mesa.Model):
         self.leader_east = LeaderAgent(model=self, territory=self.east, neighbor=self.west, llm_client=llm_client)
         self.leader_west = LeaderAgent(model=self, territory=self.west, neighbor=self.east, llm_client=llm_client)
         self.current_step_log: Dict[str, Dict[str, Any]] = {}
+        self.agent_state_logs: Dict[str, TextIO] = {}
         self.agents.add(self.leader_east)
         self.agents.add(self.leader_west)
 
@@ -112,24 +121,36 @@ class WorldModel(mesa.Model):
                     "category": self.environment.west.category,
                     **self.environment.west.metrics,
                 },
+                "metals": {
+                    "iron_holder": self.environment.iron_holder,
+                    "gold_holder": self.environment.gold_holder,
+                },
             },
             "territories": {
                 "East": {
                     "initial_food": self.east.food,
                     "initial_wealth": self.east.wealth,
+                    "initial_iron": self.east.iron,
+                    "initial_gold": self.east.gold,
                     "initial_population": self.east.population,
                     "food_yield": self.east.food_yield,
                     "wealth_yield": self.east.wealth_yield,
                     "wood_yield": self.east.wood_yield,
+                    "iron_yield": self.east.iron_yield,
+                    "gold_yield": self.east.gold_yield,
                     "infrastructure_level": self.east.infrastructure_level,
                 },
                 "West": {
                     "initial_food": self.west.food,
                     "initial_wealth": self.west.wealth,
+                    "initial_iron": self.west.iron,
+                    "initial_gold": self.west.gold,
                     "initial_population": self.west.population,
                     "food_yield": self.west.food_yield,
                     "wealth_yield": self.west.wealth_yield,
                     "wood_yield": self.west.wood_yield,
+                    "iron_yield": self.west.iron_yield,
+                    "gold_yield": self.west.gold_yield,
                     "infrastructure_level": self.west.infrastructure_level,
                 },
             },
@@ -137,6 +158,8 @@ class WorldModel(mesa.Model):
                 "focus_food",
                 "focus_wealth",
                 "focus_wood",
+                "focus_iron",
+                "focus_gold",
                 "wait",
                 "build_infrastructure",
             ],
@@ -148,9 +171,30 @@ class WorldModel(mesa.Model):
                 "multipliers": dict(self.season_multipliers),
             },
             "infrastructure": {
-                "wood_cost": config.INFRA_COST_WOOD,
-                "wealth_cost": config.INFRA_COST_WEALTH,
-                "yield_bonus_per_level": config.INFRA_FOOD_YIELD_MULT_PER_LEVEL,
+                "point_bonus": config.INFRA_FOOD_YIELD_MULT_PER_LEVEL,
+                "tiers": {
+                    "wood": {
+                        "costs": {
+                            "wood": config.INFRA_TIER_WOOD_WOOD_COST,
+                            "wealth": config.INFRA_TIER_WOOD_WEALTH_COST,
+                        },
+                        "points": config.INFRA_TIER_WOOD_POINTS,
+                    },
+                    "iron": {
+                        "costs": {
+                            "iron": config.INFRA_TIER_IRON_IRON_COST,
+                            "wealth": config.INFRA_TIER_IRON_WEALTH_COST,
+                        },
+                        "points": config.INFRA_TIER_IRON_POINTS,
+                    },
+                    "gold": {
+                        "costs": {
+                            "gold": config.INFRA_TIER_GOLD_GOLD_COST,
+                            "iron": config.INFRA_TIER_GOLD_IRON_COST,
+                        },
+                        "points": config.INFRA_TIER_GOLD_POINTS,
+                    },
+                },
             },
         }
 
@@ -168,16 +212,22 @@ class WorldModel(mesa.Model):
         lines.append(f"  West category: {self.environment.west.category}")
         for key, value in self.environment.west.metrics.items():
             lines.append(f"    west_{key}: {value:.3f}")
+        lines.append(f"  Iron holder: {self.environment.iron_holder}")
+        lines.append(f"  Gold holder: {self.environment.gold_holder}")
         lines.append("")
         lines.append("Territories:")
         for name, tcfg in cfg["territories"].items():
             lines.append(f"  {name}:")
             lines.append(f"    initial_food: {tcfg['initial_food']}")
             lines.append(f"    initial_wealth: {tcfg['initial_wealth']}")
+            lines.append(f"    initial_iron: {tcfg['initial_iron']}")
+            lines.append(f"    initial_gold: {tcfg['initial_gold']}")
             lines.append(f"    initial_population: {tcfg['initial_population']}")
             lines.append(f"    food_yield: {tcfg['food_yield']}")
             lines.append(f"    wealth_yield: {tcfg['wealth_yield']}")
             lines.append(f"    wood_yield: {tcfg['wood_yield']}")
+            lines.append(f"    iron_yield: {tcfg['iron_yield']}")
+            lines.append(f"    gold_yield: {tcfg['gold_yield']}")
             lines.append(f"    infrastructure_level: {tcfg['infrastructure_level']}")
             lines.append("")
         lines.append("Actions:")
@@ -194,13 +244,73 @@ class WorldModel(mesa.Model):
             lines.append(f"    {season}: {mult}")
         lines.append("")
         lines.append("Infrastructure:")
-        lines.append(f"  wood_cost: {cfg['infrastructure']['wood_cost']}")
-        lines.append(f"  wealth_cost: {cfg['infrastructure']['wealth_cost']}")
-        lines.append(f"  yield_bonus_per_level: {cfg['infrastructure']['yield_bonus_per_level']}")
+        lines.append(f"  point_bonus: {cfg['infrastructure']['point_bonus']}")
+        lines.append("  tiers:")
+        for tier_name, tier_data in cfg["infrastructure"]["tiers"].items():
+            cost_desc = ", ".join(f"{resource}:{amount}" for resource, amount in tier_data["costs"].items())
+            lines.append(f"    {tier_name}: costs({cost_desc}), points={tier_data['points']}")
         lines.append("")
         text = "\n".join(lines)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
+
+    def enable_agent_state_logging(self, run_dir: Path) -> None:
+        """I open per-agent JSONL files so I can emit mental-state snapshots each step."""
+        run_dir.mkdir(parents=True, exist_ok=True)
+        self.close_agent_state_logs()
+        for territory in (self.east, self.west):
+            path = run_dir / f"{territory.name.lower()}_agent_state.jsonl"
+            handle = path.open("w", encoding="utf-8")
+            self.agent_state_logs[territory.name] = handle
+
+    def log_agent_state(self, leader: LeaderAgent, decision: Dict[str, Any], llm_used: bool) -> None:
+        """I emit a JSON line capturing the leader's internal state for this step."""
+        handle = self.agent_state_logs.get(leader.territory.name)
+        if handle is None:
+            return
+        territory = leader.territory
+        allocations = decision.get("applied_allocations") or decision.get("allocations") or {}
+        memory_event = leader.memory_events[-1] if leader.memory_events else None
+        snapshot = {
+            "step": self.steps,
+            "name": territory.name,
+            "resources": {
+                "food": territory.food,
+                "wealth": territory.wealth,
+                "wood": territory.wood,
+                "iron": territory.iron,
+                "gold": territory.gold,
+                "infrastructure_level": territory.infrastructure_level,
+            },
+            "traits": {
+                "active_traits": list(territory.active_traits),
+                "personality_vector": dict(territory.personality_vector),
+                "trait_cooldown_steps": territory.trait_cooldown_steps,
+            },
+            "pressures": {
+                "exploitation_streak": territory.exploitation_streak,
+                "starvation_streak": territory.starvation_streak,
+                "failed_strategy_streak": territory.failed_strategy_streak,
+                "adaptation_pressure": territory.adaptation_pressure_note,
+            },
+            "decision": {
+                "action": decision.get("action"),
+                "allocations": allocations,
+                "build_infrastructure": bool(decision.get("build_infrastructure")),
+                "infrastructure_built": decision.get("infrastructure_built"),
+                "reason": decision.get("reason"),
+                "trait_adjustment": decision.get("trait_adjustment"),
+                "used_llm": llm_used,
+            },
+            "meta": {
+                "next_directive": leader.next_directive,
+                "last_trait_adjustment_text": getattr(leader, "last_trait_adjustment_text", None),
+                "last_memory_event": memory_event,
+                "recent_interactions": leader.interaction_log[-3:],
+            },
+        }
+        handle.write(json.dumps(snapshot) + "\n")
+        handle.flush()
 
     def record_decision(
         self,
@@ -263,36 +373,54 @@ class WorldModel(mesa.Model):
 
         def _starving_flag(before_state: Dict[str, Any]) -> bool:
             required = (before_state.get("population", 0.0) / 10.0) * config.FOOD_PER_10_POP
-            return before_state.get("food", 0.0) < required
+            return required > 0 and before_state.get("food", 0.0) < required
 
-        def _record(leader: LeaderAgent, before_state: Dict[str, Any], after_state: Dict[str, Any]) -> None:
+        def _decision_meta(name: str) -> Dict[str, Any]:
+            wrapper = self.current_step_log.get(name, {}).get("decision") or {}
+            return wrapper.get("decision", {}) or {}
+
+        def _record(name: str, leader: LeaderAgent, before_state: Dict[str, Any], after_state: Dict[str, Any]) -> None:
             action = leader.last_action or "wait"
             note_bits: list[str] = []
-            if leader.last_reason:
-                note_bits.append(str(leader.last_reason))
+            starving_event = _starving_flag(before_state)
+            if starving_event:
+                note_bits.append("starvation")
+            if after_state.get("population", 0.0) <= 0.0:
+                note_bits.append("collapse")
+            strike_active = bool(getattr(leader.territory, "on_strike", False))
             morale_mult = getattr(leader.territory, "effective_work_multiplier", 1.0)
-            unpaid = getattr(leader.territory, "unpaid_steps", 0)
-            if getattr(leader.territory, "on_strike", False):
-                note_bits.append(f"workers on strike (mult {morale_mult:.2f}, unpaid debt {unpaid:.1f})")
+            unpaid = getattr(leader.territory, "unpaid_steps", 0.0)
+            if strike_active:
+                note_bits.append("strike_active")
             elif morale_mult < 0.999:
-                note_bits.append(f"low morale mult {morale_mult:.2f} (unpaid debt {unpaid:.1f})")
-            note_text = " | ".join(note_bits) if note_bits else None
+                note_bits.append(f"low_morale x{morale_mult:.2f} (debt {unpaid:.1f})")
+            decision_meta = _decision_meta(name)
+            attempted_build = bool(decision_meta.get("build_infrastructure")) or str(
+                decision_meta.get("action", "")
+            ).lower() == "build_infrastructure"
+            if not attempted_build:
+                legacy = str(decision_meta.get("legacy_action", "")).lower()
+                attempted_build = legacy == "build_infrastructure"
+            if attempted_build and decision_meta.get("infrastructure_built") is False:
+                note_bits.append("infra_failed_missing_resources")
+            last_reason = (leader.last_reason or "").strip()
+            if last_reason:
+                note_bits.append(f"reason: {last_reason}")
+            notes_text = "; ".join(note_bits) if note_bits else None
             leader.record_step_outcome(
                 step=self.steps,
-                action=action,
-                food_before=float(before_state.get("food", 0.0)),
-                food_after=float(after_state.get("food", 0.0)),
-                wealth_before=float(before_state.get("wealth", 0.0)),
-                wealth_after=float(after_state.get("wealth", 0.0)),
-                pop_before=float(before_state.get("population", 0.0)),
-                pop_after=float(after_state.get("population", 0.0)),
-                starving=_starving_flag(before_state),
-                strike=getattr(leader.territory, "on_strike", False),
-                note=note_text,
+                action_name=action,
+                food_before=before_state.get("food", 0.0),
+                food_after=after_state.get("food", 0.0),
+                wealth_before=before_state.get("wealth", 0.0),
+                wealth_after=after_state.get("wealth", 0.0),
+                pop_before=before_state.get("population", 0.0),
+                pop_after=after_state.get("population", 0.0),
+                notes=notes_text,
             )
 
-        _record(self.leader_east, east_before, east_after)
-        _record(self.leader_west, west_before, west_after)
+        _record("East", self.leader_east, east_before, east_after)
+        _record("West", self.leader_west, west_before, west_after)
 
     def _refresh_trait_state_for_logging(self) -> None:
         """I update cached trait state so summaries show the latest pressure counters."""
@@ -320,6 +448,8 @@ class WorldModel(mesa.Model):
 
     def step(self) -> None:
         """Advance the Mesa scheduler one tick so leader agents can act."""
+        # [PRESENTATION] I walk assessors through this step function to show how each tick executes actions,
+        # negotiations, wages, upkeep, and logging in one place so they can see the whole loop end-to-end.
         super().step()
         self.current_step_log = {}
         print(f"Step {self.steps}:")
@@ -349,38 +479,14 @@ class WorldModel(mesa.Model):
             }
             self.record_wages(name, before_wages, after_wages)
 
-        east_before = {
-            "food": self.east.food,
-            "population": self.east.population,
-            "wealth": self.east.wealth,
-            "wood": self.east.wood,
-            "infrastructure_level": self.east.infrastructure_level,
-        }
-        west_before = {
-            "food": self.west.food,
-            "population": self.west.population,
-            "wealth": self.west.wealth,
-            "wood": self.west.wood,
-            "infrastructure_level": self.west.infrastructure_level,
-        }
+        east_before = self._resource_state(self.east)
+        west_before = self._resource_state(self.west)
         self._update_starvation_pressure(east_before, self.east)
         self._update_starvation_pressure(west_before, self.west)
         apply_population_dynamics(self.east)
         apply_population_dynamics(self.west)
-        east_after = {
-            "food": self.east.food,
-            "population": self.east.population,
-            "wealth": self.east.wealth,
-            "wood": self.east.wood,
-            "infrastructure_level": self.east.infrastructure_level,
-        }
-        west_after = {
-            "food": self.west.food,
-            "population": self.west.population,
-            "wealth": self.west.wealth,
-            "wood": self.west.wood,
-            "infrastructure_level": self.west.infrastructure_level,
-        }
+        east_after = self._resource_state(self.east)
+        west_after = self._resource_state(self.west)
         self._update_strategy_pressure(self.east, pop_after=east_after["population"], wealth_after=east_after["wealth"])
         self._update_strategy_pressure(self.west, pop_after=west_after["population"], wealth_after=west_after["wealth"])
         self.log_upkeep(east_before, east_after, west_before, west_after)
@@ -402,6 +508,28 @@ class WorldModel(mesa.Model):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as f:
             json.dump(self.chronicle, f, indent=2)
+        self.close_agent_state_logs()
+
+    def close_agent_state_logs(self) -> None:
+        """I close any open state log handles to avoid leaking file descriptors."""
+        for handle in self.agent_state_logs.values():
+            try:
+                handle.close()
+            except Exception:
+                pass
+        self.agent_state_logs.clear()
+
+    def _resource_state(self, territory: TerritoryState) -> Dict[str, Any]:
+        """Return a shallow copy of the scalar resources/infrastructure for logging."""
+        return {
+            "food": territory.food,
+            "population": territory.population,
+            "wealth": territory.wealth,
+            "wood": territory.wood,
+            "iron": territory.iron,
+            "gold": territory.gold,
+            "infrastructure_level": territory.infrastructure_level,
+        }
 
     def _update_starvation_pressure(self, before_state: Dict[str, Any], territory: TerritoryState) -> None:
         """Increment or reset starvation streaks based on pre-upkeep safety."""

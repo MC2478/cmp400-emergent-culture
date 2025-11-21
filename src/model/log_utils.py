@@ -49,6 +49,10 @@ def append_chronicle_action(chronicle: List[Dict[str, Any]], step: int, territor
         "wealth_after": after.get("wealth"),
         "wood_before": before.get("wood"),
         "wood_after": after.get("wood"),
+        "iron_before": before.get("iron"),
+        "iron_after": after.get("iron"),
+        "gold_before": before.get("gold"),
+        "gold_after": after.get("gold"),
         "infrastructure_before": before.get("infrastructure_level"),
         "infrastructure_after": after.get("infrastructure_level"),
         "population_before": before.get("population"),
@@ -64,6 +68,10 @@ def append_chronicle_action(chronicle: List[Dict[str, Any]], step: int, territor
         "neighbor_population_after": after.get("neighbor_population"),
         "neighbor_wood_before": before.get("neighbor_wood"),
         "neighbor_wood_after": after.get("neighbor_wood"),
+        "neighbor_iron_before": before.get("neighbor_iron"),
+        "neighbor_iron_after": after.get("neighbor_iron"),
+        "neighbor_gold_before": before.get("neighbor_gold"),
+        "neighbor_gold_after": after.get("neighbor_gold"),
         "active_traits": trait_state.get("active_traits"),
         "personality_vector": trait_state.get("personality_vector"),
         "trait_cooldown_steps": trait_state.get("trait_cooldown_steps"),
@@ -97,6 +105,10 @@ def append_chronicle_upkeep(
             "wealth_after": east_after.get("wealth"),
             "wood_before": east_before.get("wood"),
             "wood_after": east_after.get("wood"),
+            "iron_before": east_before.get("iron"),
+            "iron_after": east_after.get("iron"),
+            "gold_before": east_before.get("gold"),
+            "gold_after": east_after.get("gold"),
             "infrastructure_before": east_before.get("infrastructure_level"),
             "infrastructure_after": east_after.get("infrastructure_level"),
         },
@@ -109,6 +121,10 @@ def append_chronicle_upkeep(
             "wealth_after": west_after.get("wealth"),
             "wood_before": west_before.get("wood"),
             "wood_after": west_after.get("wood"),
+            "iron_before": west_before.get("iron"),
+            "iron_after": west_after.get("iron"),
+            "gold_before": west_before.get("gold"),
+            "gold_after": west_after.get("gold"),
             "infrastructure_before": west_before.get("infrastructure_level"),
             "infrastructure_after": west_after.get("infrastructure_level"),
         },
@@ -123,6 +139,7 @@ def print_step_summary(
     season_multipliers: Dict[str, float],
 ) -> None:
     """Print a readable summary for the step and append actions to the chronicle."""
+    # [PRESENTATION] I highlight this summary when showing the assessor how every action, wage payment, and negotiation is mirrored into both the console and chronicle for later analysis.
     for idx, territory in enumerate(["West", "East"]):
         info = current_step_log.get(territory, {})
         decision = info.get("decision", {})
@@ -136,10 +153,11 @@ def print_step_summary(
             reason = meta.get("reason", "no reason provided")
             action = meta.get("action") or ("mixed_allocation" if meta.get("applied_allocations") else "wait")
             allocations = meta.get("applied_allocations") or meta.get("allocations") or {}
-            allocation_line = ""
-            if allocations:
-                formatted_allocs = ", ".join(f"{k}:{float(v):.2f}" for k, v in allocations.items())
-                allocation_line = f"\n    - Work allocation: {formatted_allocs}"
+            focus_keys = ("focus_food", "focus_wood", "focus_wealth", "focus_iron", "focus_gold")
+            formatted_allocs = ", ".join(
+                f"{key}:{float(allocations.get(key, 0.0) or 0.0):.2f}" for key in focus_keys
+            )
+            allocation_line = f"\n    - Work allocation: {formatted_allocs}"
             infra_line = ""
             if meta.get("build_infrastructure"):
                 status = "built" if meta.get("infrastructure_built") else "failed"
@@ -188,6 +206,8 @@ def print_step_summary(
                 f"  {territory:<4}| food {fmt_res(before.get('food'))}->{fmt_res(after.get('food'))} | "
                 f"wealth {fmt_res(before.get('wealth'))}->{fmt_res(after.get('wealth'))} | "
                 f"wood {fmt_res(before.get('wood'))}->{fmt_res(after.get('wood'))} | "
+                f"iron {fmt_res(before.get('iron'))}->{fmt_res(after.get('iron'))} | "
+                f"gold {fmt_res(before.get('gold'))}->{fmt_res(after.get('gold'))} | "
                 f"infra {before.get('infrastructure_level')}->{after.get('infrastructure_level')} | "
                 f"pop {fmt_pop(before.get('population'))}->{fmt_pop(after.get('population'))}"
             )
@@ -213,15 +233,31 @@ def print_step_summary(
                 f"    East: \"{entry['east_line']}\"\n"
                 f"    West: \"{entry['west_line']}\""
             )
+        trade = entry.get("trade", {})
+        trade_line = (
+            f"    Trade flows -> food East->West {trade.get('food_from_east_to_west', 0.0)}, "
+            f"wealth West->East {trade.get('wealth_from_west_to_east', 0.0)}"
+        )
+        iron_e2w = trade.get("iron_from_east_to_west", 0.0)
+        iron_w2e = trade.get("iron_from_west_to_east", 0.0)
+        gold_e2w = trade.get("gold_from_east_to_west", 0.0)
+        gold_w2e = trade.get("gold_from_west_to_east", 0.0)
+        if iron_e2w or iron_w2e:
+            trade_line += f", iron East->West {iron_e2w}, iron West->East {iron_w2e}"
+        if gold_e2w or gold_w2e:
+            trade_line += f", gold East->West {gold_e2w}, gold West->East {gold_w2e}"
         print(
             f"\n  Negotiation at step {step} ({entry.get('trade_type')}):\n"
             f"{dialogue_block}\n"
-            f"    Trade flows -> food East->West {entry['trade']['food_from_east_to_west']}, "
-            f"wealth West->East {entry['trade']['wealth_from_west_to_east']}\n"
+            f"{trade_line}\n"
             f"      East after trade: food {fmt_res(east_before['food'])}->{fmt_res(east_after['food'])}, "
-            f"wealth {fmt_res(east_before['wealth'])}->{fmt_res(east_after['wealth'])}\n"
+            f"wealth {fmt_res(east_before['wealth'])}->{fmt_res(east_after['wealth'])}, "
+            f"iron {fmt_res(east_before.get('iron'))}->{fmt_res(east_after.get('iron'))}, "
+            f"gold {fmt_res(east_before.get('gold'))}->{fmt_res(east_after.get('gold'))}\n"
             f"      West after trade: food {fmt_res(west_before['food'])}->{fmt_res(west_after['food'])}, "
-            f"wealth {fmt_res(west_before['wealth'])}->{fmt_res(west_after['wealth'])}\n"
+            f"wealth {fmt_res(west_before['wealth'])}->{fmt_res(west_after['wealth'])}, "
+            f"iron {fmt_res(west_before.get('iron'))}->{fmt_res(west_after.get('iron'))}, "
+            f"gold {fmt_res(west_before.get('gold'))}->{fmt_res(west_after.get('gold'))}\n"
             f"      Relation now: {entry.get('relation_label')} ({entry.get('east_stance') or entry.get('west_stance')}) "
             f"score={fmt_res(entry.get('relation_score'))}"
         )
@@ -254,6 +290,8 @@ def print_step_summary(
                 f"  {territory:<4}| food {fmt_res(before_u.get('food'))}->{fmt_res(after_u.get('food'))} | "
                 f"wealth {fmt_res(before_u.get('wealth'))}->{fmt_res(after_u.get('wealth'))} | "
                 f"wood {fmt_res(before_u.get('wood'))}->{fmt_res(after_u.get('wood'))} | "
+                f"iron {fmt_res(before_u.get('iron'))}->{fmt_res(after_u.get('iron'))} | "
+                f"gold {fmt_res(before_u.get('gold'))}->{fmt_res(after_u.get('gold'))} | "
                 f"infra {before_u.get('infrastructure_level')}->{after_u.get('infrastructure_level')} | "
                 f"pop {fmt_pop(before_u.get('population'))}->{fmt_pop(after_u.get('population'))} | req_food {fmt_res(req)}"
             )
