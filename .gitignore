@@ -14,9 +14,7 @@ env/
 
 # Data & models
 data/*
-logs/*
 models/*
 !data/.gitkeep
-!logs/.gitkeep
 # VS Code
 .vscode/
