@@ -37,14 +37,6 @@ class EnvironmentSnapshot:
     gold_holder: str
 
 
-def _split_budget(total: float, base_ratio: float, rng: Any, wiggle: float = 0.18) -> tuple[float, float]:
-    """I split a total budget with a small deterministic tilt."""
-    ratio = max(0.15, min(0.85, base_ratio + rng.uniform(-wiggle, wiggle)))
-    east = total * ratio
-    west = total - east
-    return east, west
-
-
 def _starting_amount(range_pair: tuple[float, float], rng: Any) -> float:
     low, high = range_pair
     return rng.uniform(low, high)
@@ -52,9 +44,9 @@ def _starting_amount(range_pair: tuple[float, float], rng: Any) -> float:
 
 def _metrics(food_yield: float, wealth_yield: float, wood_yield: float, iron_yield: float, gold_yield: float) -> Dict[str, float]:
     """I convert raw yields into relative richness scores."""
-    baseline_food = (config.EAST_FOOD_YIELD + config.WEST_FOOD_YIELD) / 2.0
-    baseline_wealth = (config.EAST_WEALTH_YIELD + config.WEST_WEALTH_YIELD) / 2.0
-    baseline_wood = (config.EAST_WOOD_YIELD + config.WEST_WOOD_YIELD) / 2.0
+    baseline_food = config.WORLD_MAX_FOOD_YIELD / 2.0
+    baseline_wealth = config.WORLD_MAX_WEALTH_YIELD / 2.0
+    baseline_wood = config.WORLD_MAX_WOOD_YIELD / 2.0
     food_richness = food_yield / baseline_food if baseline_food else 1.0
     wealth_richness = wealth_yield / baseline_wealth if baseline_wealth else 1.0
     wood_richness = wood_yield / baseline_wood if baseline_wood else 1.0
@@ -70,52 +62,32 @@ def _metrics(food_yield: float, wealth_yield: float, wood_yield: float, iron_yie
     return metrics
 
 
+def _split_yield(total: float, rng: Any) -> tuple[float, float]:
+    """Split a total yield between East/West while avoiding extreme imbalance."""
+    split = rng.uniform(0.1, 0.9)
+    east_value = total * split
+    west_value = total - east_value
+    return east_value, west_value
+
+
 def generate_environment(rng: Any) -> EnvironmentSnapshot:
-    """I produce deterministic yields/resources per seed within modest bounds."""
-    food_total = rng.uniform(config.ENV_TOTAL_FOOD_YIELD_MIN, config.ENV_TOTAL_FOOD_YIELD_MAX)
-    wealth_total = rng.uniform(config.ENV_TOTAL_WEALTH_YIELD_MIN, config.ENV_TOTAL_WEALTH_YIELD_MAX)
-    wood_total = rng.uniform(config.ENV_TOTAL_WOOD_YIELD_MIN, config.ENV_TOTAL_WOOD_YIELD_MAX)
-    iron_total = rng.uniform(config.ENV_TOTAL_IRON_YIELD_MIN, config.ENV_TOTAL_IRON_YIELD_MAX)
-    gold_total = rng.uniform(config.ENV_TOTAL_GOLD_YIELD_MIN, config.ENV_TOTAL_GOLD_YIELD_MAX)
+    """I produce deterministic yields/resources per seed within the configured world caps."""
+    east_food_yield, west_food_yield = _split_yield(config.WORLD_MAX_FOOD_YIELD, rng)
+    east_wealth_yield, west_wealth_yield = _split_yield(config.WORLD_MAX_WEALTH_YIELD, rng)
+    east_wood_yield, west_wood_yield = _split_yield(config.WORLD_MAX_WOOD_YIELD, rng)
+    east_iron_yield, west_iron_yield = _split_yield(config.WORLD_MAX_IRON_YIELD, rng)
+    east_gold_yield, west_gold_yield = _split_yield(config.WORLD_MAX_GOLD_YIELD, rng)
 
-    food_ratio = config.EAST_FOOD_YIELD / (config.EAST_FOOD_YIELD + config.WEST_FOOD_YIELD)
-    wealth_ratio = config.EAST_WEALTH_YIELD / (config.EAST_WEALTH_YIELD + config.WEST_WEALTH_YIELD)
-    wood_ratio = 0.5  # symmetric baseline
-
-    east_food_yield, west_food_yield = _split_budget(food_total, food_ratio, rng)
-    east_wealth_yield, west_wealth_yield = _split_budget(wealth_total, wealth_ratio, rng)
-    east_wood_yield, west_wood_yield = _split_budget(wood_total, wood_ratio, rng, wiggle=0.08)
-
-    iron_holder = "East" if rng.random() < 0.5 else "West"
-    gold_holder = "West" if iron_holder == "East" else "East"
-
-    starting_iron = _starting_amount(config.ENV_STARTING_IRON_RANGE, rng)
-    starting_gold = _starting_amount(config.ENV_STARTING_GOLD_RANGE, rng)
-
-    if iron_holder == "East":
-        east_iron_yield = iron_total
-        west_iron_yield = 0.0
-        east_starting_iron = starting_iron
-        west_starting_iron = 0.0
-    else:
-        west_iron_yield = iron_total
-        east_iron_yield = 0.0
-        west_starting_iron = starting_iron
-        east_starting_iron = 0.0
-
-    if gold_holder == "East":
-        east_gold_yield = gold_total
-        west_gold_yield = 0.0
-        east_starting_gold = starting_gold
-        west_starting_gold = 0.0
-    else:
-        west_gold_yield = gold_total
-        east_gold_yield = 0.0
-        west_starting_gold = starting_gold
-        east_starting_gold = 0.0
+    iron_holder = "East" if east_iron_yield >= west_iron_yield else "West"
+    gold_holder = "East" if east_gold_yield >= west_gold_yield else "West"
 
     east_metrics = _metrics(east_food_yield, east_wealth_yield, east_wood_yield, east_iron_yield, east_gold_yield)
     west_metrics = _metrics(west_food_yield, west_wealth_yield, west_wood_yield, west_iron_yield, west_gold_yield)
+
+    east_starting_iron = _starting_amount(config.ENV_STARTING_IRON_RANGE, rng) if east_iron_yield > 0 else 0.0
+    west_starting_iron = _starting_amount(config.ENV_STARTING_IRON_RANGE, rng) if west_iron_yield > 0 else 0.0
+    east_starting_gold = _starting_amount(config.ENV_STARTING_GOLD_RANGE, rng) if east_gold_yield > 0 else 0.0
+    west_starting_gold = _starting_amount(config.ENV_STARTING_GOLD_RANGE, rng) if west_gold_yield > 0 else 0.0
 
     east = TerritoryEnvironment(
         food_yield=east_food_yield,

@@ -7,14 +7,12 @@ STARTING_WOOD: float = 0.0
 STARTING_POPULATION: int = 100
 STARTING_INFRASTRUCTURE_LEVEL: int = 0
 
-# Territory-specific yields per work point
-EAST_FOOD_YIELD: float = 2.0
-EAST_WEALTH_YIELD: float = 0.5
-EAST_WOOD_YIELD: float = 1.0
-
-WEST_FOOD_YIELD: float = 1.0
-WEST_WEALTH_YIELD: float = 1.5
-WEST_WOOD_YIELD: float = 1.0
+# Global world yield caps (totals are split between East/West per seed)
+WORLD_MAX_FOOD_YIELD: float = 3.0
+WORLD_MAX_WEALTH_YIELD: float = 3.0
+WORLD_MAX_WOOD_YIELD: float = 3.0
+WORLD_MAX_IRON_YIELD: float = 3.0
+WORLD_MAX_GOLD_YIELD: float = 3.0
 
 # --- Infrastructure & yields ---
 
@@ -89,17 +87,7 @@ TRAIT_CHANGE_PRESSURE_THRESHOLD: int = 2
 TRAIT_SOFT_ADJUST_DELTA: float = 0.1
 TRAIT_NEUTRAL_VALUE: float = 0.5
 
-# Environment generation bounds (seed-driven, within modest caps)
-ENV_TOTAL_FOOD_YIELD_MIN: float = 2.5
-ENV_TOTAL_FOOD_YIELD_MAX: float = 3.5
-ENV_TOTAL_WEALTH_YIELD_MIN: float = 1.7
-ENV_TOTAL_WEALTH_YIELD_MAX: float = 2.3
-ENV_TOTAL_WOOD_YIELD_MIN: float = 1.7
-ENV_TOTAL_WOOD_YIELD_MAX: float = 2.3
-ENV_TOTAL_IRON_YIELD_MIN: float = 0.5
-ENV_TOTAL_IRON_YIELD_MAX: float = 2.0
-ENV_TOTAL_GOLD_YIELD_MIN: float = 0.3
-ENV_TOTAL_GOLD_YIELD_MAX: float = 1.5
+# Environment starting resource ranges
 ENV_STARTING_FOOD_RANGE: tuple[float, float] = (2.0, 4.5)
 ENV_STARTING_WEALTH_RANGE: tuple[float, float] = (4.0, 6.5)
 ENV_STARTING_WOOD_RANGE: tuple[float, float] = (0.0, 2.0)

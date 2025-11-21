@@ -18,11 +18,5 @@ logs/*
 models/*
 !data/.gitkeep
 !logs/.gitkeep
-notebooks/
-
-# Planning docs
-DEV_NOTES_REFACTORING.md
-FEASIBILITY_NOTES_AND_CHANGES.md
-
 # VS Code
 .vscode/

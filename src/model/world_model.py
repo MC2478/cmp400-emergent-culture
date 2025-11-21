@@ -215,6 +215,39 @@ class WorldModel(mesa.Model):
         lines.append(f"  Iron holder: {self.environment.iron_holder}")
         lines.append(f"  Gold holder: {self.environment.gold_holder}")
         lines.append("")
+        east_yields = {
+            "food": self.environment.east.food_yield,
+            "wealth": self.environment.east.wealth_yield,
+            "wood": self.environment.east.wood_yield,
+            "iron": self.environment.east.iron_yield,
+            "gold": self.environment.east.gold_yield,
+        }
+        west_yields = {
+            "food": self.environment.west.food_yield,
+            "wealth": self.environment.west.wealth_yield,
+            "wood": self.environment.west.wood_yield,
+            "iron": self.environment.west.iron_yield,
+            "gold": self.environment.west.gold_yield,
+        }
+        lines.append("Resource yields:")
+        lines.append(
+            "  East: "
+            + ", ".join(f"{key} {value:.3f}" for key, value in east_yields.items())
+            + f" (total {sum(east_yields.values()):.3f})"
+        )
+        lines.append(
+            "  West: "
+            + ", ".join(f"{key} {value:.3f}" for key, value in west_yields.items())
+            + f" (total {sum(west_yields.values()):.3f})"
+        )
+        lines.append(
+            "  Totals: "
+            + ", ".join(
+                f"{key} {(east_yields[key] + west_yields[key]):.3f}/{getattr(config, f'WORLD_MAX_{key.upper()}_YIELD'):.3f}"
+                for key in east_yields
+            )
+        )
+        lines.append("")
         lines.append("Territories:")
         for name, tcfg in cfg["territories"].items():
             lines.append(f"  {name}:")

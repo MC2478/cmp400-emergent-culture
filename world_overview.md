@@ -29,8 +29,8 @@ I simulate two asymmetric territories (East and West) to study emergent dynamics
 - **Food** - Produced via work allocations and season-adjusted yields; consumed every upkeep step.
 - **Wealth** - Earned via work allocations and trade; spent on wages, infrastructure, and buffers.
 - **Wood** - Gathered via `focus_wood`; consumed (with wealth) to raise infrastructure.
-- **Iron** - Only one territory in a run can mine iron; the other must trade for it if they want the mid-tier infrastructure bonus, and even the gold-holder must import iron before a top-tier upgrade.
-- **Gold** - The complementary territory mines gold; it powers the most advanced infrastructure tier and never spawns alongside iron locally, so whichever side starts with gold needs diplomacy or trade routes to gather the iron prerequisite.
+- **Iron** - Total iron yield is capped globally and split randomly per seed; the side with the higher share is labelled the holder in summaries, but both can mine and start with seed-jittered stocks.
+- **Gold** - Gold yield is also split randomly; higher-yield territory is tagged as holder, yet both can mine, and pursuing the top infrastructure tier still requires coordinating with the neighbour when your own share is low.
 - **Population** - Drives work points. When food covers the quota, population grows by `POP_GROWTH_RATE`; deficits shrink it by `POP_LOSS_RATE_PER_MISSING_FOOD` per missing food unit (capped at 90% loss per tick).
 - **Infrastructure level (`infra`)** - Multiplies all per-work yields; each point adds +10% to every resource.
 - **Relation score/label** - Shared diplomatic status between East and West (float -2..2), adjusted after each negotiation.
@@ -55,9 +55,9 @@ Infrastructure bonuses are multiplicative: each point adds `0.1` to all per-work
 
 # Seeded Environment & Starting Traits
 
-- Every `WorldModel` draws an `EnvironmentSnapshot` from the world seed: total food/wealth/wood/iron/gold budgets are sampled within modest bounds, split asymmetrically by `_split_budget()`, and one side receives all iron mining while the other receives all gold. Starting food/wealth/wood/metal stores are jittered within capped ranges, and the snapshot records which side owns each metal for later logging.
+- Every `WorldModel` draws an `EnvironmentSnapshot` from the world seed: each resource has a world-level maximum (`WORLD_MAX_*_YIELD`), and a deterministic RNG split (kept within 10%-90%) divides that total between East and West, so the combined yields always equal the cap.
 - Default runs now let the seed pick starting food; passing `initial_food` overrides both East and West for quick CLI tweaks while keeping the seed-determined yields.
-- Each territory gets an environment label (`food_rich`, `wealth_rich`, `scarce`, `balanced`) from its richness metrics. `sample_starting_trait()` uses that label plus the shared RNG to pick an initial trait (e.g., wealth-rich leans `Wealth-hoarder`, food-rich leans `Friendly`/`Food-secure`, scarce can choose `Aggressive`/`Food-secure`/`Isolationist`). Because the RNG comes from the Mesa model, initial traits are deterministic for a given seed.
+- Each territory gets an environment label (`food_rich`, `wealth_rich`, `scarce`, `balanced`) from its richness metrics relative to half the world cap on that resource. `sample_starting_trait()` uses that label plus the shared RNG to pick an initial trait (e.g., wealth-rich leans `Wealth-hoarder`, food-rich leans `Friendly`/`Food-secure`, scarce can choose `Aggressive`/`Food-secure`/`Isolationist`). Because the RNG comes from the Mesa model, initial traits are deterministic for a given seed.
 
 # Personality & Trait System
 
@@ -103,15 +103,15 @@ If the LLM returns malformed JSON or an unknown action, I fall back to a simple 
 # Key Tunable Parameters (config.py)
 
 - `STARTING_FOOD`, `STARTING_WEALTH`, `STARTING_WOOD`, `STARTING_POPULATION`, `STARTING_INFRASTRUCTURE_LEVEL` - Initial conditions (defaults: food 3, wealth 5, wood 0, population 100, infra 0).
-- `EAST_*_YIELD` / `WEST_*_YIELD` - Per-territory yield multipliers (East is food-heavy at 2.0/0.5/1.0; West is wealth-heavy at 1.0/1.5/1.0).
+- `WORLD_MAX_*_YIELD` - Total per-resource yields (food/wealth/wood/iron/gold) that get split between East/West by the seeded RNG while keeping each share between 10% and 90% of the cap.
 - `PEOPLE_PER_WORK_POINT` - People per work point (200). Work points are fractional and scaled by morale.
 - `FOOD_PER_10_POP`, `POP_GROWTH_RATE`, `POP_LOSS_RATE_PER_MISSING_FOOD` - Food requirement and percentage growth/loss rules (0.05 food per 10 pop; +/-10% growth/loss factor per unit deficit, capped at 90% loss per step).
 - `FOOD_PER_WORK_BASE`, `WOOD_PER_WORK_BASE`, `WEALTH_PER_WORK_BASE`, `INFRA_*_YIELD_MULT_PER_LEVEL` - Base yields and infra bonuses per level (food/wood +0.10, wealth +0.05).
-- Tiered infrastructure costs: wood tier (5 wood + 2 wealth, +1 point), iron tier (5 iron + 5 wealth, +2 points), gold tier (5 gold + 5 iron, +3 points). Only one territory starts with iron and the other with gold each run.
+- Tiered infrastructure costs: wood tier (5 wood + 2 wealth, +1 point), iron tier (5 iron + 5 wealth, +2 points), gold tier (5 gold + 5 iron, +3 points). Both territories can now mine iron and gold, but seed splits still produce asymmetries that encourage trade when your share is low.
 - `FOOD_SAFETY_HORIZON_STEPS`, `FOOD_SAFETY_GOOD_RATIO`, `NON_FOOD_MIN_FRACTION` - Parameters driving the priority hint shared with the LLM.
 - `WAGE_PER_WORKER`, `STRIKE_THRESHOLD_STEPS`, `LOW_MORALE_MULTIPLIER`, `STRIKE_MULTIPLIER`, `PARTIAL_PAY_RECOVERY` - Wage per worker (0.1), unpaid debt threshold (4 steps) for strikes, and morale multipliers.
 - `POP_DISPLAY_DECIMALS`, `RESOURCE_DISPLAY_DECIMALS` - Console rounding for population/resources.
 - `SEASONS`, `SEASON_MULTIPLIERS` - Order of seasons with two-step duration and per-resource multipliers (spring 1.0, summer 1.2, autumn 0.8, winter 0.4 for food/wood).
 - `MAX_LEADER_MEMORY_EVENTS` - Maximum within-run events each leader retains for prompts.
 - Trait tuning: `TRAIT_MAX_ACTIVE`, `TRAIT_ADAPTATION_ALPHA`, `TRAIT_COOLDOWN_STEPS`, `TRAIT_CHANGE_PRESSURE_THRESHOLD`, `TRAIT_SOFT_ADJUST_DELTA`, `TRAIT_NEUTRAL_VALUE`.
-- Environment bounds: `ENV_TOTAL_*_YIELD_MIN/MAX` and `ENV_STARTING_*_RANGE` set seed-driven yield/resource caps.
+- Environment ranges: `ENV_STARTING_*_RANGE` controls the jitter applied to starting food/wealth/wood/iron/gold once the per-territory yields have been determined.
