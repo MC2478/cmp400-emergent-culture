@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import mesa
 
+import config
 from config import (
     FOOD_PER_10_POP,
     INFRA_TIER_WOOD_WOOD_COST,
@@ -94,6 +95,13 @@ class TerritoryState:
     last_wealth_after: Optional[float] = None
     adaptation_pressure_note: str = ""
     gift_streak_received: int = 0
+    food_sent: float = 0.0
+    food_received: float = 0.0
+    wealth_sent: float = 0.0
+    wealth_received: float = 0.0
+    wood_sent: float = 0.0
+    wood_received: float = 0.0
+    long_term_notes: List[str] = field(default_factory=list)
 
 
 class LeaderAgent(mesa.Agent):
@@ -124,6 +132,7 @@ class LeaderAgent(mesa.Agent):
         self.interaction_log: List[str] = []
         self.max_interactions: int = 8
         self.last_trait_adjustment_text: str = "no change"
+        self.negotiation_intent: Dict[str, Any] = {"initiate": False}
 
     def _required_food(self) -> float:
         """Food math cue: compute the granular food requirement using shared config."""
@@ -169,6 +178,115 @@ class LeaderAgent(mesa.Agent):
             # Should not happen, but keep the note useful.
             return "Gift exchanges have been rapid; make sure they stay balanced."
         return "No outstanding gift imbalance; recent trades look even."
+
+    def _trade_ledger_note(self) -> Dict[str, float]:
+        """Ledger cue: summarise cumulative trade flows."""
+        territory = self.territory
+        food_sent = getattr(territory, "food_sent", 0.0)
+        food_received = getattr(territory, "food_received", 0.0)
+        wealth_sent = getattr(territory, "wealth_sent", 0.0)
+        wealth_received = getattr(territory, "wealth_received", 0.0)
+        wood_sent = getattr(territory, "wood_sent", 0.0)
+        wood_received = getattr(territory, "wood_received", 0.0)
+        return {
+            "food_sent": food_sent,
+            "food_received": food_received,
+            "wealth_sent": wealth_sent,
+            "wealth_received": wealth_received,
+            "wood_sent": wood_sent,
+            "wood_received": wood_received,
+            "net_food": food_sent - food_received,
+            "net_wealth": wealth_sent - wealth_received,
+            "net_wood": wood_sent - wood_received,
+        }
+
+    def _long_term_summary_text(self) -> str:
+        notes = getattr(self.territory, "long_term_notes", [])
+        if not notes:
+            return "No milestone notes recorded yet."
+        return "; ".join(notes)
+
+    def _resource_pressures(self) -> Dict[str, float]:
+        """Pressure cue: quantify food safety and infra gaps for prompts."""
+        required_now = self._required_food()
+        horizon_need = required_now * FOOD_SAFETY_HORIZON_STEPS
+        food_ratio = (self.territory.food / horizon_need) if horizon_need > 0 else float("inf")
+        wood_gap = max(0.0, INFRA_TIER_WOOD_WOOD_COST - self.territory.wood)
+        wealth_gap = max(0.0, INFRA_TIER_WOOD_WEALTH_COST - self.territory.wealth)
+        infra_ready = wood_gap <= 0.01 and wealth_gap <= 0.01
+        return {
+            "food_ratio_horizon": food_ratio,
+            "wood_gap": wood_gap,
+            "wealth_gap": wealth_gap,
+            "infra_ready": infra_ready,
+        }
+
+    def _compute_negotiation_intent(self) -> Dict[str, Any]:
+        """Intent cue: decide whether to initiate negotiation and what to request."""
+        intent: Dict[str, Any] = {"initiate": False}
+        territory = self.territory
+        priority = self._priority_hint()
+        ratio = priority.get("food_safety_ratio", 0.0)
+        required = self._required_food()
+        reason = ""
+        request_resource = None
+        request_amount = 0.0
+        offer_resource = None
+        offer_amount = 0.0
+        urgency = "low"
+
+        if ratio < 0.9:
+            shortfall = max(0.0, required - territory.food)
+            if shortfall > 0.2:
+                request_resource = "food"
+                request_amount = round(min(shortfall + 0.2, required), 2)
+                offer_resource = "wealth" if territory.wealth > 0.3 else None
+                if offer_resource:
+                    offer_amount = round(min(territory.wealth * 0.4, max(0.1, request_amount * 0.6)), 2)
+                reason = "Food safety well below 1.0; requesting aid."
+                urgency = "critical_food"
+
+        wood_cost = INFRA_TIER_WOOD_WOOD_COST
+        wealth_cost = INFRA_TIER_WOOD_WEALTH_COST
+        wood_missing = max(0.0, wood_cost - territory.wood)
+        wealth_missing = max(0.0, wealth_cost - territory.wealth)
+        close_to_wood = territory.wood >= 0.7 * wood_cost
+        close_to_wealth = territory.wealth >= 0.7 * wealth_cost
+
+        if request_resource is None and ratio >= 1.05 and close_to_wood and close_to_wealth:
+            if wood_missing > 0.01:
+                request_resource = "wood"
+                request_amount = round(min(wood_missing, 1.0), 2)
+                offer_resource = "wealth"
+                offer_amount = round(min(territory.wealth * 0.2, max(0.1, request_amount * 0.6)), 2)
+                reason = "Ready to upgrade infrastructure; missing final wood."
+                urgency = "infrastructure"
+            elif wealth_missing > 0.01:
+                request_resource = "wealth"
+                request_amount = round(min(wealth_missing, 0.6), 2)
+                offer_resource = "food"
+                offer_amount = round(min(territory.food * 0.2, max(0.1, request_amount * 0.5)), 2)
+                reason = "Ready to upgrade infrastructure; missing final wealth."
+                urgency = "infrastructure"
+
+        if request_resource:
+            intent.update(
+                {
+                    "initiate": True,
+                    "request_resource": request_resource,
+                    "request_amount": request_amount,
+                    "offer_resource": offer_resource,
+                    "offer_amount": offer_amount,
+                    "reason": reason or "Resource request",
+                    "urgency": urgency,
+                }
+            )
+        else:
+            intent.update({"initiate": False, "reason": "No pressing trade needs."})
+        return intent
+
+    def _refresh_negotiation_intent(self) -> None:
+        self.negotiation_intent = self._compute_negotiation_intent()
 
     def _snapshot(self) -> Dict[str, Any]:
         """Snapshot card: grab a simple before/after view for chronicle logging."""
@@ -242,6 +360,10 @@ class LeaderAgent(mesa.Agent):
             "failed_strategy_streak": self.territory.failed_strategy_streak,
             "adaptation_pressure": self.territory.adaptation_pressure_note,
             "gift_balance_note": self._gift_balance_note(),
+            "trade_ledger": self._trade_ledger_note(),
+            "long_term_notes": list(getattr(self.territory, "long_term_notes", [])),
+            "long_term_summary": self._long_term_summary_text(),
+            "resource_pressures": self._resource_pressures(),
         }
         if self.neighbor is not None:
             state.update(
@@ -313,6 +435,19 @@ class LeaderAgent(mesa.Agent):
         self.memory_events.append(event)
         if len(self.memory_events) > self.max_memory_events:
             self.memory_events.pop(0)
+
+        interval = getattr(config, "LONG_TERM_SUMMARY_INTERVAL", 50)
+        max_notes = getattr(config, "MAX_LONG_TERM_NOTES", 6)
+        if interval > 0 and step % interval == 0:
+            summary = (
+                f"Step {step}: pop {int(pop_after)}, food {food_after:.1f}, "
+                f"wealth {wealth_after:.1f}, infra {self.territory.infrastructure_level}"
+            )
+            notes = getattr(self.territory, "long_term_notes", [])
+            notes.append(summary)
+            if len(notes) > max_notes:
+                notes.pop(0)
+            self.territory.long_term_notes = notes
 
     def record_interaction(self, summary: str) -> None:
         """Interaction log cue: keep a short recap of recent diplomatic exchanges."""
@@ -578,6 +713,7 @@ class LeaderAgent(mesa.Agent):
             used_llm=llm_used,
         )
         self.model.log_agent_state(self, decision, llm_used)
+        self._refresh_negotiation_intent()
 
     def _apply_trait_adjustment_text(self, text: str) -> None:
         """Trait adjuster: interpret and apply trait changes when cooldown allows."""

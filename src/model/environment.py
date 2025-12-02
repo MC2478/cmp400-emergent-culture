@@ -1,4 +1,4 @@
-"""Seed-driven environment generation for asymmetric territories."""
+"""Quick card: seed-driven environment generation for asymmetric territories."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from src.model.traits import classify_environment
 
 @dataclass
 class TerritoryEnvironment:
-    """I bundle environment-derived yields, starting resources, and metrics for one territory."""
+    """Bundle note: yields, starting resources, and metrics for one territory."""
 
     food_yield: float
     wealth_yield: float
@@ -29,7 +29,7 @@ class TerritoryEnvironment:
 
 @dataclass
 class EnvironmentSnapshot:
-    """I hold both sides' generated environments so I can trace deterministic seeds."""
+    """Snapshot note: keep both sides plus metal holders for reproducible runs."""
 
     east: TerritoryEnvironment
     west: TerritoryEnvironment
@@ -43,7 +43,7 @@ def _starting_amount(range_pair: tuple[float, float], rng: Any) -> float:
 
 
 def _metrics(food_yield: float, wealth_yield: float, wood_yield: float, iron_yield: float, gold_yield: float) -> Dict[str, float]:
-    """I convert raw yields into relative richness scores."""
+    """Richness card: turn raw yields into relative scarcity/abundance scores."""
     baseline_food = config.WORLD_MAX_FOOD_YIELD / 2.0
     baseline_wealth = config.WORLD_MAX_WEALTH_YIELD / 2.0
     baseline_wood = config.WORLD_MAX_WOOD_YIELD / 2.0
@@ -63,7 +63,7 @@ def _metrics(food_yield: float, wealth_yield: float, wood_yield: float, iron_yie
 
 
 def _split_yield(total: float, rng: Any) -> tuple[float, float]:
-    """Split a total yield between East/West while avoiding extreme imbalance."""
+    """Split note: divide a total yield between East/West while avoiding extremes."""
     split = rng.uniform(0.1, 0.9)
     east_value = total * split
     west_value = total - east_value
@@ -71,7 +71,7 @@ def _split_yield(total: float, rng: Any) -> tuple[float, float]:
 
 
 def generate_environment(rng: Any) -> EnvironmentSnapshot:
-    """I produce deterministic yields/resources per seed within the configured world caps."""
+    """Main generator card: use the seed to hand each side its yields and starting stock."""
     east_food_yield, west_food_yield = _split_yield(config.WORLD_MAX_FOOD_YIELD, rng)
     east_wealth_yield, west_wealth_yield = _split_yield(config.WORLD_MAX_WEALTH_YIELD, rng)
     east_wood_yield, west_wood_yield = _split_yield(config.WORLD_MAX_WOOD_YIELD, rng)

@@ -1,4 +1,4 @@
-"""Economy helpers extracted from world_model.py for wages, morale, and population upkeep."""
+"""Quick card: wage, morale, and population upkeep helpers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from src.agents.leader import TerritoryState
 
 
 def apply_wages(territory: TerritoryState) -> None:
-    """Deduct wages and update morale/strike state based on available wealth."""
+    """Wages cue: pay workers, then set morale/strike based on how much you covered."""
     workers = max(0.0, territory.population / config.PEOPLE_PER_WORK_POINT)
     wage_per_worker = config.WAGE_PER_WORKER
     wage_bill = workers * wage_per_worker
@@ -45,7 +45,7 @@ def apply_wages(territory: TerritoryState) -> None:
 
 
 def apply_population_dynamics(territory: TerritoryState) -> None:
-    """Apply upkeep: consume food, adjust population for growth or starvation, and clamp resources."""
+    """Upkeep cue: consume food, grow if fed, cut population on starvation, clamp resources."""
     required_food = (territory.population / 10.0) * config.FOOD_PER_10_POP
     territory.required_food = required_food
     if required_food <= 0:

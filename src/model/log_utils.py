@@ -1,4 +1,4 @@
-"""Logging helpers extracted from world_model.py for chronicle writing and console summaries."""
+"""Quick card: logging helpers for the chronicle and console step recaps."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from src.model.traits import trait_gloss
 
 
 def fmt_res(value: Any) -> str:
-    """Format resource numbers with configured precision."""
+    """Formatter note: keep resource numbers tidy using configured precision."""
     try:
         return f"{float(value):.{config.RESOURCE_DISPLAY_DECIMALS}f}"
     except (TypeError, ValueError):
@@ -17,7 +17,7 @@ def fmt_res(value: Any) -> str:
 
 
 def fmt_pop(value: Any) -> str:
-    """Format population counts with configured precision."""
+    """Formatter note: round population counts with the configured precision."""
     try:
         decimals = max(0, int(config.POP_DISPLAY_DECIMALS))
         return f"{float(value):.{decimals}f}"
@@ -138,8 +138,8 @@ def print_step_summary(
     chronicle: List[Dict[str, Any]],
     season_multipliers: Dict[str, float],
 ) -> None:
-    """Print a readable summary for the step and append actions to the chronicle."""
-    # [PRESENTATION] I highlight this summary when showing the assessor how every action, wage payment, and negotiation is mirrored into both the console and chronicle for later analysis.
+    """Showtime card: print the step recap and mirror it into the chronicle."""
+    # Quick cue: this is the console story I point to when explaining how every tick is logged.
     for idx, territory in enumerate(["West", "East"]):
         info = current_step_log.get(territory, {})
         decision = info.get("decision", {})
@@ -193,7 +193,7 @@ def print_step_summary(
             )
             append_chronicle_action(chronicle, step, territory, info)
 
-    # Compact resource table
+    # Quick table: before/after resources for each side.
     rows: list[str] = []
     header = "  Resources (before -> after)"
     for territory in ["West", "East"]:
@@ -226,7 +226,15 @@ def print_step_summary(
         west_after = negotiation_info["west_after"]
         dialogue_lines = entry.get("dialogue") or []
         if dialogue_lines:
-            formatted = [f"      {line['speaker']}: \"{line['line']}\"" for line in dialogue_lines]
+            formatted = []
+            for line in dialogue_lines:
+                speaker = line.get("speaker", "?")
+                text = line.get("line", "")
+                decision = line.get("decision")
+                tag = f"{speaker}: \"{text}\""
+                if decision:
+                    tag += f" [{decision}]"
+                formatted.append(f"      {tag}")
             dialogue_block = "\n" + "\n".join(formatted)
         else:
             dialogue_block = (
@@ -234,22 +242,36 @@ def print_step_summary(
                 f"    West: \"{entry['west_line']}\""
             )
         trade = entry.get("trade", {})
-        trade_line = (
-            f"    Trade flows -> food East->West {trade.get('food_from_east_to_west', 0.0)}, "
-            f"wealth West->East {trade.get('wealth_from_west_to_east', 0.0)}"
-        )
-        iron_e2w = trade.get("iron_from_east_to_west", 0.0)
-        iron_w2e = trade.get("iron_from_west_to_east", 0.0)
-        gold_e2w = trade.get("gold_from_east_to_west", 0.0)
-        gold_w2e = trade.get("gold_from_west_to_east", 0.0)
-        if iron_e2w or iron_w2e:
-            trade_line += f", iron East->West {iron_e2w}, iron West->East {iron_w2e}"
-        if gold_e2w or gold_w2e:
-            trade_line += f", gold East->West {gold_e2w}, gold West->East {gold_w2e}"
+        outcome = entry.get("negotiation_outcome") or entry.get("trade_type")
+        turn_count = entry.get("turns")
+        accepted_by = entry.get("accepted_by")
+        food_e2w = float(trade.get("food_from_east_to_west", 0.0) or 0.0)
+        wealth_w2e = float(trade.get("wealth_from_west_to_east", 0.0) or 0.0)
+        wood_e2w = float(trade.get("wood_from_east_to_west", 0.0) or 0.0)
+        wood_w2e = float(trade.get("wood_from_west_to_east", 0.0) or 0.0)
+        iron_e2w = float(trade.get("iron_from_east_to_west", 0.0) or 0.0)
+        iron_w2e = float(trade.get("iron_from_west_to_east", 0.0) or 0.0)
+        gold_e2w = float(trade.get("gold_from_east_to_west", 0.0) or 0.0)
+        gold_w2e = float(trade.get("gold_from_west_to_east", 0.0) or 0.0)
+        wealth_e2w = max(-wealth_w2e, 0.0)
+        wealth_w2e_pos = max(wealth_w2e, 0.0)
+        trade_rows = [
+            f"      | resource | East->West | West->East |",
+            f"      | food     | {fmt_res(max(food_e2w,0))} | {fmt_res(max(-food_e2w,0))} |",
+            f"      | wealth   | {fmt_res(wealth_e2w)} | {fmt_res(wealth_w2e_pos)} |",
+            f"      | wood     | {fmt_res(wood_e2w)} | {fmt_res(wood_w2e)} |",
+            f"      | iron     | {fmt_res(iron_e2w)} | {fmt_res(iron_w2e)} |",
+            f"      | gold     | {fmt_res(gold_e2w)} | {fmt_res(gold_w2e)} |",
+        ]
+        header = f"\n  Negotiation at step {step} (outcome={outcome}, trade_type={entry.get('trade_type')})"
+        if turn_count is not None:
+            header = header.rstrip() + f", turns={turn_count}"
+        if accepted_by:
+            header = header.rstrip() + f", accepted_by={accepted_by}"
         print(
-            f"\n  Negotiation at step {step} ({entry.get('trade_type')}):\n"
+            f"{header}:\n"
             f"{dialogue_block}\n"
-            f"{trade_line}\n"
+            f"    Trade table:\n" + "\n".join(trade_rows) + "\n"
             f"      East after trade: food {fmt_res(east_before['food'])}->{fmt_res(east_after['food'])}, "
             f"wealth {fmt_res(east_before['wealth'])}->{fmt_res(east_after['wealth'])}, "
             f"iron {fmt_res(east_before.get('iron'))}->{fmt_res(east_after.get('iron'))}, "

@@ -1,4 +1,4 @@
-"""Mesa world model wiring East/West leaders, now using extracted helpers for economy, diplomacy, and logging."""
+"""Quick card: Mesa world wiring for East/West leaders plus economy, diplomacy, and logging helpers."""
 
 from __future__ import annotations
 
@@ -19,15 +19,15 @@ from src.model.traits import adaptation_pressure_text, add_trait_to_state, sampl
 
 
 class WorldModel(mesa.Model):
-    """Track two territories, plug in leader agents, and collect decisions/negotiations for analysis."""
+    """Model card: track two territories, plug in leaders, and collect decisions/negotiations."""
 
     def __init__(self, random_seed: int | None = None, initial_food: float | None = None, use_llm: bool = False) -> None:
-        """Accept ``random_seed``, optional ``initial_food`` override, and ``use_llm`` so runs are reproducible."""
+        """Init cue: accept seed/food override/LLM toggle so runs stay reproducible."""
         super().__init__(seed=random_seed)
         self.chronicle: List[Dict[str, Any]] = []
         self.environment: EnvironmentSnapshot = generate_environment(self.random)
 
-        # Initialise East and West with asymmetric yields.
+        # Setup note: initialise East and West with asymmetric yields.
         east_env = self.environment.east
         west_env = self.environment.west
         starting_food_east = float(initial_food) if initial_food is not None else east_env.starting_food
@@ -102,15 +102,15 @@ class WorldModel(mesa.Model):
         return self.seasons[idx]
 
     def current_season(self) -> str:
-        """Expose the current season derived from the simulation step counter."""
+        """Season cue: expose the current season from the step counter."""
         return self._season_for_step(self.steps)
 
     def next_season(self) -> str:
-        """Expose the upcoming season so the LLM can plan ahead."""
+        """Season cue: show the upcoming season so prompts can plan ahead."""
         return self._season_for_step(self.steps + 1)
 
     def get_config_summary(self) -> dict:
-        """Snapshot the core knobs so they can be serialised alongside a run."""
+        """Config card: snapshot the key knobs to serialize alongside a run."""
         return {
             "environment": {
                 "east": {
@@ -199,7 +199,7 @@ class WorldModel(mesa.Model):
         }
 
     def save_config_summary(self, path: str) -> None:
-        """Persist a human-readable description of the configuration to ``path``."""
+        """Export cue: write a human-readable config summary to a given path."""
         cfg = self.get_config_summary()
         lines: list[str] = []
         lines.append("Simulation configuration summary")
@@ -288,7 +288,7 @@ class WorldModel(mesa.Model):
             f.write(text)
 
     def enable_agent_state_logging(self, run_dir: Path) -> None:
-        """I open per-agent JSONL files so I can emit mental-state snapshots each step."""
+        """Logging setup: open per-agent JSONL files for mental-state snapshots."""
         run_dir.mkdir(parents=True, exist_ok=True)
         self.close_agent_state_logs()
         for territory in (self.east, self.west):
@@ -297,7 +297,7 @@ class WorldModel(mesa.Model):
             self.agent_state_logs[territory.name] = handle
 
     def log_agent_state(self, leader: LeaderAgent, decision: Dict[str, Any], llm_used: bool) -> None:
-        """I emit a JSON line capturing the leader's internal state for this step."""
+        """State tap: emit a JSON line capturing the leader's internal state for this step."""
         handle = self.agent_state_logs.get(leader.territory.name)
         if handle is None:
             return
@@ -353,7 +353,7 @@ class WorldModel(mesa.Model):
         after: Dict[str, Any],
         used_llm: bool,
     ) -> None:
-        """Buffer decision details so grouped logging can use them."""
+        """Decision buffer: stash before/after/metadata so grouped logging can use it."""
         entry = self.current_step_log.setdefault(territory_name, {})
         entry["decision"] = {
             "before": dict(before),
@@ -368,7 +368,7 @@ class WorldModel(mesa.Model):
         before: Dict[str, Any],
         after: Dict[str, Any],
     ) -> None:
-        """Buffer upkeep outcome per territory for grouped summary."""
+        """Upkeep buffer: store pre/post upkeep snapshots for summaries."""
         entry = self.current_step_log.setdefault(territory_name, {})
         entry["upkeep"] = {"before": dict(before), "after": dict(after)}
 
@@ -378,7 +378,7 @@ class WorldModel(mesa.Model):
         before: Dict[str, Any],
         after: Dict[str, Any],
     ) -> None:
-        """Capture wage payments so the summary can reveal morale issues."""
+        """Wage buffer: capture wage payments so summaries reveal morale issues."""
         entry = self.current_step_log.setdefault(territory_name, {})
         entry["wages"] = {"before": dict(before), "after": dict(after)}
 
@@ -389,7 +389,7 @@ class WorldModel(mesa.Model):
         west_before: Dict[str, Any],
         west_after: Dict[str, Any],
     ) -> None:
-        """Capture upkeep snapshots for both logging and the chronicle."""
+        """Upkeep card: capture upkeep snapshots for logging and the chronicle."""
         self.record_upkeep("East", east_before, east_after)
         self.record_upkeep("West", west_before, west_after)
         append_chronicle_upkeep(self.chronicle, self.steps, east_before, east_after, west_before, west_after)
@@ -402,7 +402,7 @@ class WorldModel(mesa.Model):
         west_before: Dict[str, Any],
         west_after: Dict[str, Any],
     ) -> None:
-        """Capture before/after stats for each leader so prompts can include memory."""
+        """Memory card: capture before/after stats so prompts can include recent context."""
 
         def _starving_flag(before_state: Dict[str, Any]) -> bool:
             required = (before_state.get("population", 0.0) / 10.0) * config.FOOD_PER_10_POP
@@ -456,7 +456,7 @@ class WorldModel(mesa.Model):
         _record("West", self.leader_west, west_before, west_after)
 
     def _refresh_trait_state_for_logging(self) -> None:
-        """I update cached trait state so summaries show the latest pressure counters."""
+        """Trait cache: refresh trait state so summaries show the latest pressures."""
         for name, territory in (("East", self.east), ("West", self.west)):
             decision_wrap = self.current_step_log.get(name, {}).get("decision")
             if not decision_wrap:
@@ -480,9 +480,8 @@ class WorldModel(mesa.Model):
             decision_wrap["decision"] = meta
 
     def step(self) -> None:
-        """Advance the Mesa scheduler one tick so leader agents can act."""
-        # [PRESENTATION] I walk assessors through this step function to show how each tick executes actions,
-        # negotiations, wages, upkeep, and logging in one place so they can see the whole loop end-to-end.
+        """Loop card: advance one tick to run actions, negotiation, upkeep, and logging."""
+        # Presentation cue: this loop is the whole turn laid bare for walkthroughs.
         super().step()
         self.current_step_log = {}
         print(f"Step {self.steps}:")
@@ -495,7 +494,7 @@ class WorldModel(mesa.Model):
         if self.llm_client is not None and self.llm_client.enabled:
             run_negotiation(self)
 
-        # Wages/morale after production so next turn reflects morale.
+        # Morale timing: pay wages after production so next turn reflects morale.
         for name, territory in (("East", self.east), ("West", self.west)):
             before_wages = {
                 "wealth": territory.wealth,
@@ -533,18 +532,18 @@ class WorldModel(mesa.Model):
         print_step_summary(self.steps, self.current_step_log, self.chronicle, self.season_multipliers)
 
     def all_territories_dead(self) -> bool:
-        """Report whether every territory has collapsed so callers can stop early."""
+        """End check: report whether both territories have collapsed."""
         return self.east.population <= 0 and self.west.population <= 0
 
     def save_chronicle(self, path: Path) -> None:
-        """Persist the chronicle as JSON to ``path`` so it can be analysed later."""
+        """Export cue: save the chronicle as JSON so it can be analysed later."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as f:
             json.dump(self.chronicle, f, indent=2)
         self.close_agent_state_logs()
 
     def close_agent_state_logs(self) -> None:
-        """I close any open state log handles to avoid leaking file descriptors."""
+        """Cleanup note: close any open state log handles to avoid leaks."""
         for handle in self.agent_state_logs.values():
             try:
                 handle.close()
@@ -553,7 +552,7 @@ class WorldModel(mesa.Model):
         self.agent_state_logs.clear()
 
     def _resource_state(self, territory: TerritoryState) -> Dict[str, Any]:
-        """Return a shallow copy of the scalar resources/infrastructure for logging."""
+        """Snapshot cue: shallow copy of resources/infrastructure for logging."""
         return {
             "food": territory.food,
             "population": territory.population,
@@ -565,7 +564,7 @@ class WorldModel(mesa.Model):
         }
 
     def _update_starvation_pressure(self, before_state: Dict[str, Any], territory: TerritoryState) -> None:
-        """Increment or reset starvation streaks based on pre-upkeep safety."""
+        """Starvation tracker: adjust streaks based on pre-upkeep safety."""
         required = (before_state.get("population", 0) / 10.0) * config.FOOD_PER_10_POP
         food = before_state.get("food", 0.0)
         ratio = food / required if required > 0 else float("inf")
@@ -575,7 +574,7 @@ class WorldModel(mesa.Model):
             territory.starvation_streak = 0
 
     def _update_strategy_pressure(self, territory: TerritoryState, *, pop_after: float, wealth_after: float) -> None:
-        """I track whether repeating similar allocations without gains should raise stagnation pressure."""
+        """Stagnation tracker: bump pressure when similar plans fail to deliver gains."""
         prev_pop = territory.last_population_after
         prev_wealth = territory.last_wealth_after
         prev_allocs = getattr(territory, "previous_allocations", {}) or {}

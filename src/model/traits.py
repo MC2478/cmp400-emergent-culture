@@ -1,4 +1,4 @@
-"""Trait catalogue and helpers for personality-driven leader behaviour."""
+"""Quick card: trait catalogue and helpers that steer leader personalities."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ PERSONALITY_DIMENSIONS: Sequence[str] = (
 
 @dataclass(frozen=True)
 class Trait:
-    """I keep a personality vector, prompt snippet, and incompatibility list together."""
+    """Trait card: personality vector, description, and incompatibilities bundled."""
 
     name: str
     vector: Dict[str, float]
@@ -29,7 +29,7 @@ class Trait:
 
 
 def neutral_personality_vector() -> Dict[str, float]:
-    """I return a fresh neutral personality vector so callers avoid mutable defaults."""
+    """Neutral cue: return a fresh neutral vector so callers avoid shared state."""
     return {dim: float(config.TRAIT_NEUTRAL_VALUE) for dim in PERSONALITY_DIMENSIONS}
 
 
@@ -118,7 +118,7 @@ def _with_defaults(vector: Dict[str, float] | None) -> Dict[str, float]:
 
 
 def blend_personality_vector(current: Dict[str, float], trait_vector: Dict[str, float], alpha: float | None = None) -> Dict[str, float]:
-    """I blend the given trait vector into the current map with the provided alpha."""
+    """Blend note: mix the trait vector into the current map with an alpha weight."""
     alpha = config.TRAIT_ADAPTATION_ALPHA if alpha is None else alpha
     existing = _with_defaults(current)
     trait_values = _with_defaults(trait_vector)
@@ -129,13 +129,13 @@ def blend_personality_vector(current: Dict[str, float], trait_vector: Dict[str, 
 
 
 def tick_trait_cooldown(state: Any) -> None:
-    """I decrement cooldown timers safely."""
+    """Cooldown cue: tick trait timers down without going negative."""
     if getattr(state, "trait_cooldown_steps", 0) > 0:
         state.trait_cooldown_steps = max(0, int(getattr(state, "trait_cooldown_steps")) - 1)
 
 
 def _record_event(state: Any, event: Dict[str, Any]) -> Dict[str, Any]:
-    """I stash trait events both for per-step logging and long-run history."""
+    """Event log cue: stash trait events for both step-level and long-run history."""
     history: List[Dict[str, Any]] = getattr(state, "trait_history", [])
     history.append(event)
     if len(history) > 50:
@@ -148,7 +148,7 @@ def _record_event(state: Any, event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def add_trait_to_state(state: Any, trait_name: str, *, step: int | None = None, reason: str | None = None) -> Dict[str, Any] | None:
-    """I add a trait if allowed, resolving incompatibilities and enforcing the cap."""
+    """Adder card: attach a trait when allowed, resolving clashes and caps."""
     trait = TRAIT_CATALOGUE.get(trait_name)
     if trait is None:
         return None
@@ -180,7 +180,7 @@ def add_trait_to_state(state: Any, trait_name: str, *, step: int | None = None, 
 
 
 def remove_trait_from_state(state: Any, trait_name: str, *, step: int | None = None, reason: str | None = None) -> Dict[str, Any] | None:
-    """I remove a trait and ease relevant dimensions back toward neutral."""
+    """Remover card: drop a trait and soften related dimensions toward neutral."""
     active: List[str] = list(getattr(state, "active_traits", []))
     if trait_name not in active:
         return None
@@ -204,7 +204,7 @@ def remove_trait_from_state(state: Any, trait_name: str, *, step: int | None = N
 
 
 def nudge_personality(state: Any, dimension: str, delta: float, *, step: int | None = None, reason: str | None = None) -> Dict[str, Any] | None:
-    """I nudge a specific dimension directly for softer adjustments."""
+    """Nudge note: tweak a single dimension directly for softer adjustments."""
     if dimension not in PERSONALITY_DIMENSIONS:
         return None
     current = _with_defaults(getattr(state, "personality_vector", None))
@@ -222,7 +222,7 @@ def nudge_personality(state: Any, dimension: str, delta: float, *, step: int | N
 
 
 def apply_trait_actions(state: Any, actions: Iterable[Dict[str, Any]], *, step: int | None = None, reason_prefix: str = "") -> List[Dict[str, Any]]:
-    """I apply parsed trait actions, respecting cooldown and caps."""
+    """Action applier: run parsed trait changes, respecting cooldowns and caps."""
     events: list[Dict[str, Any]] = []
     if getattr(state, "trait_cooldown_steps", 0) > 0:
         return events
@@ -251,7 +251,7 @@ def apply_trait_actions(state: Any, actions: Iterable[Dict[str, Any]], *, step: 
 
 
 def interpret_trait_adjustment(text: str) -> List[Dict[str, Any]]:
-    """I parse LLM free-text into structured trait/nudge actions."""
+    """Interpreter card: turn free-text instructions into trait/nudge actions."""
     lower = (text or "").strip().lower()
     if not lower or "no change" in lower:
         return []
@@ -294,7 +294,7 @@ def interpret_trait_adjustment(text: str) -> List[Dict[str, Any]]:
 
 
 def describe_personality_vector(personality: Dict[str, float]) -> str:
-    """I build a short human-readable description of numeric dimensions."""
+    """Gloss card: translate numeric personality dimensions into quick labels."""
     vec = _with_defaults(personality)
 
     def bucket(value: float) -> str:
@@ -327,14 +327,14 @@ def describe_personality_vector(personality: Dict[str, float]) -> str:
 
 
 def personality_summary(personality: Dict[str, float], active_traits: Sequence[str]) -> str:
-    """I summarise current personality and trait labels."""
+    """Summary note: one-liner for personality vector plus active trait labels."""
     trait_label = ", ".join(active_traits) if active_traits else "no named traits"
     vector_text = describe_personality_vector(personality)
     return f"Personality: {vector_text}. Active traits: {trait_label}."
 
 
 def trait_gloss(personality: Dict[str, float], active_traits: Sequence[str]) -> str:
-    """I build a short behaviour gloss for logging based on traits + personality."""
+    """Logging cue: quick behaviour gloss from traits + personality mix."""
     vec = _with_defaults(personality)
     bits: list[str] = []
     if "Friendly" in active_traits:
@@ -368,7 +368,7 @@ def trait_gloss(personality: Dict[str, float], active_traits: Sequence[str]) -> 
 
 
 def apply_pressure_adaptation(state: Any) -> List[Dict[str, Any]]:
-    """I convert pressure streaks into automatic trait/personality shifts when cooldown allows."""
+    """Pressure loop: convert streaks into automatic trait/personality shifts when allowed."""
     events: list[Dict[str, Any]] = []
     threshold = config.TRAIT_CHANGE_PRESSURE_THRESHOLD
     if getattr(state, "trait_cooldown_steps", 0) > 0:
@@ -442,7 +442,7 @@ NEGOTIATION_STYLE_HINTS: Dict[str, str] = {
 
 
 def negotiation_style_line(active_traits: Sequence[str]) -> str:
-    """I pick a short style note for negotiation prompts."""
+    """Negotiation hint: pick a short style note for prompts."""
     for trait in active_traits:
         if trait in NEGOTIATION_STYLE_HINTS:
             return NEGOTIATION_STYLE_HINTS[trait]
@@ -450,7 +450,7 @@ def negotiation_style_line(active_traits: Sequence[str]) -> str:
 
 
 def adaptation_pressure_text(state: Any) -> str:
-    """I surface adaptation pressure when streaks are high and cooldown is open."""
+    """Pressure text: surface adaptation prompts when streaks are high and cooldown is open."""
     pressure_parts: list[str] = []
     if getattr(state, "exploitation_streak", 0) >= config.TRAIT_CHANGE_PRESSURE_THRESHOLD:
         pressure_parts.append(f"Repeated exploitative trades ({state.exploitation_streak}) are hurting you.")
@@ -465,7 +465,7 @@ def adaptation_pressure_text(state: Any) -> str:
 
 
 def classify_environment(env_metrics: Dict[str, float]) -> str:
-    """I map environment richness into a coarse category."""
+    """Environment tag: map richness metrics into a coarse category."""
     food_rich = env_metrics.get("env_food_richness", 1.0)
     wealth_rich = env_metrics.get("env_wealth_richness", 1.0)
     scarce = food_rich < 0.9 and wealth_rich < 0.9
@@ -479,7 +479,7 @@ def classify_environment(env_metrics: Dict[str, float]) -> str:
 
 
 def sample_starting_trait(category: str, rng: Any) -> str | None:
-    """I deterministically sample a starting trait based on environment category."""
+    """Seed pick: deterministically sample a starting trait from the environment category."""
     roll = rng.random()
     if category == "wealth_rich":
         if roll < 0.6:

@@ -1,4 +1,4 @@
-"""LM Studio OpenAI-style client for decisions and negotiations."""
+"""Quick card: this module talks to LM Studio for decisions and trade chats."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ import requests
 
 import config
 from src.model.parsers import extract_action_hint, parse_json_response, sanitise_allocations
-from src.model.prompt_builder import compose_negotiation_context, compose_prompt
+from src.model.prompt_builder import compose_negotiation_context, compose_negotiation_turn_prompt, compose_prompt
 
 log = logging.getLogger(__name__)
 
 
 def summarise_memory_for_prompt(events: List[Dict[str, Any]], max_events: int = 10) -> str:
-    """I summarise the last few memory events into short lines for the LLM prompt."""
+    """Prompt prep note: condense the latest memory events into friendly one-liners."""
     if not events:
         return "No previous steps in this run."
 
@@ -56,30 +56,30 @@ def summarise_memory_for_prompt(events: List[Dict[str, Any]], max_events: int = 
     return "\n".join(lines)
 
 
-# Mirror allowed actions locally to avoid circular imports.
+# Cheat sheet: allowed work actions live here to dodge circular imports.
 _WORK_ACTIONS: tuple[str, ...] = ("focus_food", "focus_wood", "focus_wealth", "focus_iron", "focus_gold")
 
 
 @dataclass
 class LLMConfig:
-    """LM Studio connection details (URL, model, decoding params)."""
+    """Config card: where the LM Studio endpoint, model, and decoding knobs live."""
 
     base_url: str = "http://127.0.0.1:1234/v1/chat/completions"
     model: str = "meta-llama-3.1-8b-instruct"
     temperature: float = 0.1
-    max_tokens: int = 128
+    max_tokens: int = 2500
     timeout: int = 30
 
 
 class LLMDecisionClient:
-    """Thin requests-powered helper that speaks OpenAI's schema to LM Studio."""
+    """Helper blurb: wraps requests so LM Studio looks like the OpenAI API."""
 
     def __init__(self, config: LLMConfig | None = None, enabled: bool = False) -> None:
         self.config = config or LLMConfig()
         self.enabled = enabled
 
     def _negotiate_request(self, prompt: str, max_tokens: int) -> Dict[str, Any] | None:
-        """Send a negotiation sub-task prompt and parse the JSON reply."""
+        """Little sidekick: send a negotiation prompt and hand back parsed JSON."""
         try:
             response = requests.post(
                 self.config.base_url,
@@ -92,7 +92,7 @@ class LLMDecisionClient:
                     "max_tokens": max_tokens,
                     "temperature": self.config.temperature,
                 },
-                timeout=10,
+                timeout=self.config.timeout,
             )
             response.raise_for_status()
             raw = response.json()["choices"][0]["message"]["content"].strip()
@@ -105,14 +105,15 @@ class LLMDecisionClient:
         return parse_json_response(raw)
 
     def negotiate(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Call LM Studio twice: once for dialogue, once for the final trade."""
+        """Two-step dance: first get dialogue, then settle on the trade."""
         if not self.enabled:
             raise RuntimeError("LLMDecisionClient is disabled.")
 
         context = compose_negotiation_context(state)
+        initiator = state.get("dialogue_initiator") or "East"
         dialogue_prompt = f"""{context}
 
-Dialogue task: produce an alternating conversation (East speaks first, then West) with at least one full exchange and at most three exchanges per side. Each line must follow the numbers above and the speakers must strictly alternate (East, West, East, West, ...). Respond ONLY with JSON like {{"dialogue": [{{"speaker": "East", "line": "..."}}...]}}. Do not include trade information yet or any extra text. It is acceptable to end with no deal (e.g., a polite \"hold steady\") if no agreement is reached.
+Dialogue task: produce an alternating conversation (the initiator speaks first: {initiator}) with at least one full exchange and continue until both sides either reach a concrete agreement, explicitly decline, or mutually decide to pause. Keep the dialogue concise but allow as many turns as needed. Each line must follow the numbers above and the speakers must strictly alternate (Initiator, Other, Initiator, Other, ...). Respond ONLY with JSON like {{"dialogue": [{{"speaker": "East", "line": "..."}}...]}}. Do not include trade information yet or any extra text. It is acceptable to end with no deal (e.g., a polite \"hold steady\") if no agreement is reached.
 """
         dialogue_data = self._negotiate_request(dialogue_prompt, max(512, self.config.max_tokens))
         if dialogue_data is None:
@@ -129,8 +130,6 @@ Dialogue task: produce an alternating conversation (East speaks first, then West
                     if speaker not in ("east", "west") or not text:
                         continue
                     lines.append({"speaker": "East" if speaker == "east" else "West", "line": text})
-                    if len(lines) >= 6:
-                        break
             return lines
 
         def _dialogue_valid(lines: List[Dict[str, str]]) -> bool:
@@ -165,16 +164,16 @@ Negotiation transcript:
 {transcript}
 
 Settlement task: determine the final deal reached in the transcript and respond ONLY with JSON like {{
-  "trade": {{"food_from_east_to_west": 0, "wealth_from_west_to_east": 0, "reason": "..."}},
+  "trade": {{"food_from_east_to_west": 0, "wealth_from_west_to_east": 0, "wood_from_east_to_west": 0, "wood_from_west_to_east": 0, "reason": "..."}},
   "east_line": "...",
   "west_line": "..."
 }}.
 Trade rules:
-  - If no deal is reached, return zeros for both flows.
-  - Flows must match the final proposal and stay within each side's resources (positive food means East ships food to West; positive wealth means West sends wealth to East).
+  - If no deal is reached or both parties explicitly decline, return zeros for all flows.
+  - Flows must match the final proposal and stay within each side's resources (positive food/wood means East ships that resource to West; positive wealth means West sends wealth to East).
   - Do not propose aid that would leave the sender below roughly 1.5x their immediate food requirement.
-  - If one side is more food-insecure, food should flow to them unless the dialogue explicitly refuses; avoid gifts from the poorer side to the richer side unless the dialogue shows tribute/exploitation.
-  - When it is reasonably safe, prefer a small non-zero trade (token gifts of ~0.1-0.2 or balanced swaps of similar value) instead of defaulting to zero. Balanced food-for-wealth trades are welcome when both sides remain safe.
+  - Respect autonomy: if a party refused, keep flows at zero and summarize the refusal.
+  - Token gifts are only acceptable when the donor remains clearly safer and the dialogue explicitly insists on a goodwill gesture.
   - Summary lines should reflect each leader's closing statement.
 """
         trade_data = self._negotiate_request(trade_prompt, max(384, self.config.max_tokens))
@@ -183,13 +182,13 @@ Trade rules:
 
         trade = trade_data.get("trade") or {}
 
-        def _sanitise_flow(key: str) -> int:
+        def _sanitise_flow(key: str) -> float:
             value = trade.get(key, 0)
             try:
-                delta = int(value)
+                delta = float(value)
             except (ValueError, TypeError):
-                delta = 0
-            return max(-5, min(5, delta))
+                delta = 0.0
+            return max(-5.0, min(5.0, delta))
 
         reason_text = str(trade.get("reason", "LLM proposed this trade.")).strip() or "LLM proposed this trade."
         east_line = str(trade_data.get("east_line", "")).strip()
@@ -206,13 +205,64 @@ Trade rules:
             "trade": {
                 "food_from_east_to_west": _sanitise_flow("food_from_east_to_west"),
                 "wealth_from_west_to_east": _sanitise_flow("wealth_from_west_to_east"),
+                "wood_from_east_to_west": _sanitise_flow("wood_from_east_to_west"),
+                "wood_from_west_to_east": _sanitise_flow("wood_from_west_to_east"),
                 "reason": reason_text,
             },
         }
         return decision
 
+    def negotiate_turn(self, *, side: str, session: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+        """Turn-level helper: ask one leader to reply, accept, or counter a proposal."""
+        if not self.enabled:
+            raise RuntimeError("LLMDecisionClient is disabled.")
+
+        prompt = compose_negotiation_turn_prompt(side, session, state)
+        payload = self._negotiate_request(prompt, max(512, self.config.max_tokens // 2))
+        if payload is None:
+            return self._fallback_turn(side, reason="request failed")
+
+        parsed = payload if isinstance(payload, dict) else parse_json_response(str(payload))
+        if parsed is None:
+            return self._fallback_turn(side, reason="invalid JSON")
+
+        decision_raw = str(parsed.get("decision", "")).strip().lower()
+        decision_value = decision_raw if decision_raw in ("counter", "accept", "decline") else "counter"
+        reply = str(parsed.get("reply", "")).strip()
+
+        proposal_raw = parsed.get("proposal") or {}
+
+        def _sanitise_flow(key: str) -> float:
+            value = proposal_raw.get(key, 0)
+            try:
+                delta = float(value)
+            except (ValueError, TypeError):
+                delta = 0.0
+            return max(-5.0, min(5.0, delta))
+
+        proposal = {
+            "food_from_east_to_west": _sanitise_flow("food_from_east_to_west"),
+            "wealth_from_west_to_east": _sanitise_flow("wealth_from_west_to_east"),
+            "wood_from_east_to_west": _sanitise_flow("wood_from_east_to_west"),
+            "wood_from_west_to_east": _sanitise_flow("wood_from_west_to_east"),
+            "iron_from_east_to_west": _sanitise_flow("iron_from_east_to_west"),
+            "iron_from_west_to_east": _sanitise_flow("iron_from_west_to_east"),
+            "gold_from_east_to_west": _sanitise_flow("gold_from_east_to_west"),
+            "gold_from_west_to_east": _sanitise_flow("gold_from_west_to_east"),
+            "reason": str(proposal_raw.get("reason", "")).strip() or "No justification provided.",
+        }
+
+        if not reply:
+            reply = "Let's pause and rethink the trade."
+
+        return {
+            "reply": reply,
+            "proposal": proposal,
+            "decision": decision_value,
+        }
+
     def decide(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Send the composed prompt to LM Studio and interpret the JSON reply."""
+        """Main loop: ship the decision prompt, wrangle JSON, and fall back gracefully."""
         if not self.enabled:
             raise RuntimeError("LLMDecisionClient is disabled.")
 
@@ -232,7 +282,7 @@ Trade rules:
                         "max_tokens": self.config.max_tokens,
                         "temperature": self.config.temperature,
                     },
-                    timeout=10,
+                    timeout=self.config.timeout,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -250,12 +300,12 @@ Trade rules:
 
         parsed = parse_json_response(text)
         if parsed is None:
-            # One retry before heuristic; include a clear reminder.
+            # Quick reminder round if the first parse flopped.
             text_retry = _request("Respond with JSON only in the specified schema.")
             if text_retry:
                 parsed = parse_json_response(text_retry)
         if parsed is None:
-            # Salvage based on a hinted action if present.
+            # If JSON stays messy, peek for a hinted action to salvage intent.
             action_hint = extract_action_hint(text, _WORK_ACTIONS + ("build_infrastructure", "wait"))
             if action_hint is None:
                 log.warning("LLM decision JSON invalid; using fallback policy.")
@@ -285,7 +335,7 @@ Trade rules:
         }
 
     def _fallback_negotiation(self) -> Dict[str, Any]:
-        """Safe no-trade negotiation result."""
+        """Safety net: no-trade, polite dialogue when LM Studio flakes."""
         return {
             "dialogue": [
                 {"speaker": "East", "line": "Let's hold steady for now."},
@@ -296,12 +346,14 @@ Trade rules:
             "trade": {
                 "food_from_east_to_west": 0,
                 "wealth_from_west_to_east": 0,
+                "wood_from_east_to_west": 0,
+                "wood_from_west_to_east": 0,
                 "reason": "fallback trade",
             },
         }
 
     def _fallback_decision(self, reason: str) -> Dict[str, Any]:
-        """Neutral fallback decision when the LLM is unreachable."""
+        """Backup plan: neutral allocations when the LLM can't be reached."""
         return {
             "allocations": {},
             "build_infrastructure": False,
@@ -309,4 +361,24 @@ Trade rules:
             "reason": f"LLM decision fallback: {reason}",
             "next_prompt": "Rebuild buffers and gather wood.",
             "trait_adjustment": "no change",
+        }
+
+    def _fallback_turn(self, side: str, reason: str) -> Dict[str, Any]:
+        """Fallback for a single negotiation turn when the LLM response is unusable."""
+        side_label = "East" if str(side).lower().startswith("e") else "West"
+        other_side = "West" if side_label == "East" else "East"
+        return {
+            "reply": f"{other_side}, let's hold steady; I cannot commit without clearer terms. ({reason})",
+            "proposal": {
+                "food_from_east_to_west": 0.0,
+                "wealth_from_west_to_east": 0.0,
+                "wood_from_east_to_west": 0.0,
+                "wood_from_west_to_east": 0.0,
+                "iron_from_east_to_west": 0.0,
+                "iron_from_west_to_east": 0.0,
+                "gold_from_east_to_west": 0.0,
+                "gold_from_west_to_east": 0.0,
+                "reason": f"Fallback: {reason}",
+            },
+            "decision": "decline",
         }

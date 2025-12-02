@@ -31,6 +31,7 @@ def compose_prompt(state: Dict[str, Any]) -> str:
     interaction_text = state.get("interaction_text") or "No notable interactions recorded."
     current_season = state.get("current_season", "unknown")
     next_season = state.get("next_season", "unknown")
+    pressures = state.get("resource_pressures") or {}
     current_season_mult = config.SEASON_MULTIPLIERS.get(current_season, 1.0)
     next_season_mult = config.SEASON_MULTIPLIERS.get(next_season, 1.0)
 
@@ -104,87 +105,72 @@ def compose_prompt(state: Dict[str, Any]) -> str:
             "If food safety looks secure for the next few steps, setting build_infrastructure:true will invest immediately."
         )
 
-    prompt = f"""
-You are the autonomous leader of the territory "{name}" at simulation step {step}.
-Population: {pop:.0f} people, requiring {required_food:.2f} food per step to avoid starvation.
-Current resources: food={food:.2f}, wealth={wealth:.2f}, wood={wood:.2f}, iron={iron:.2f}, gold={gold:.2f}, infrastructure points={infra} (+{infra*10:.0f}% production).
-{infra_snapshot}{exclusive_note}
-{auto_infra_note}
-  - Food buffer (next {horizon_steps} steps): need {food_need_horizon:.2f}, have {food:.2f}, gap {food_gap:.2f} ({_gap_status(food_gap)}).
-  - Wage bill this step (~{wage_bill:.2f} wealth): gap {wage_gap:.2f} ({_gap_status(wage_gap)}).
-Season outlook: current season="{current_season}" (food/wood yield x{current_season_mult:.2f}); next step remains "{next_season}" (x{next_season_mult:.2f}). Plan to exploit high-multiplier seasons for production and stockpile before harsh seasons.
+    ledger = state.get("trade_ledger") or {}
+    ledger_line = (
+        f"Food sent {ledger.get('food_sent', 0.0):.2f} / received {ledger.get('food_received', 0.0):.2f}; "
+        f"Wealth sent {ledger.get('wealth_sent', 0.0):.2f} / received {ledger.get('wealth_received', 0.0):.2f}; "
+        f"Wood sent {ledger.get('wood_sent', 0.0):.2f} / received {ledger.get('wood_received', 0.0):.2f}; "
+        f"net food {ledger.get('net_food', 0.0):+.2f}, net wealth {ledger.get('net_wealth', 0.0):+.2f}, net wood {ledger.get('net_wood', 0.0):+.2f}"
+    )
+    milestones = state.get("long_term_notes") or []
+    milestone_block = "\n".join(f"    * {note}" for note in milestones) if milestones else "    * None yet."
 
-Last self-set directive: "{prior_directive}"
-{personality_line}
-Belief about the other territory: {other_trait_notes}
-Gift balance status: {gift_note}
-{"Adaptation pressure: " + adaptation_pressure if adaptation_pressure else "No acute adaptation pressure; still stay alert to repeating mistakes."}
-If adaptation pressure appears, treat it as a signal to adjust traits or strategy; explicitly propose a suitable "trait_adjustment" if you believe a mindset change would help.
+    prompt = f"""
+You are the autonomous leader of "{name}" at step {step}. Population {pop:.0f} (requires {required_food:.2f} food/step). Your primary duty is to keep citizens fed, invest surpluses into infrastructure, and negotiate fair trades that respect reciprocity.
+
+Status snapshot:
+  - Season now {current_season} (food/wood x{current_season_mult:.2f}); next {next_season} (x{next_season_mult:.2f}).
+  - Work points available: {work_points:.2f}. Wage bill ≈ {wage_bill:.2f} wealth ({_gap_status(wage_gap)} gap {wage_gap:.2f}).
+  - Food horizon ({horizon_steps} steps): need {food_need_horizon:.2f}, have {food:.2f}, gap {food_gap:.2f} ({_gap_status(food_gap)}).
+  - Diplomatic stance: {relation} (score {relation_score}).
+
+Resources:
+  Food {food:.2f} | Wealth {wealth:.2f} | Wood {wood:.2f} | Iron {iron:.2f} | Gold {gold:.2f} | Infra {infra} (+{infra*10:.0f}%).
+Per-work yields (after infra): food {yields.get('food_per_work', 0.0):.3f}, wood {yields.get('wood_per_work', 0.0):.3f}, wealth {yields.get('wealth_per_work', 0.0):.3f}, iron {yields.get('iron_per_work', 0.0):.3f}, gold {yields.get('gold_per_work', 0.0):.3f}.
+
+Resource pressures:
+  - Food safety ratio (next {horizon_steps} steps): {pressures.get('food_ratio_horizon', 0.0):.2f}
+  - Wood gap toward next tier: {pressures.get('wood_gap', 0.0):.2f}
+  - Wealth gap toward next tier: {pressures.get('wealth_gap', 0.0):.2f}
+  - Infra ready now? {pressures.get('infra_ready')}
+
+Infrastructure readiness:
+{infra_snapshot}{auto_infra_note}
 {infra_prompt}
 
-Work points available this step: {work_points} (roughly 100 population per work point adjusted by morale).
-Current diplomatic stance toward your neighbour: {relation} (score {relation_score}). Your duty is to your citizens, but you should weigh short-term safety against long-term benefits; small trades and infra investments are acceptable when the buffer looks solid and the upside is clear.
+Trade + relations:
+  - Belief about neighbour: {other_trait_notes}
+  - Gift balance status: {gift_note}
+  - Ledger: {ledger_line}
+  - Long-term milestones:\n{milestone_block}
 
-Recent history of your decisions in this run:
-{history_text}
-Recent diplomatic interactions with your neighbour:
-{interaction_text}
-Pay attention to moments where past actions failed (e.g., infrastructure attempts without wood) and adjust course proactively.
+Guidance:
+  1. Cover food/wages for the next {horizon_steps} steps before chasing prosperity.
+  2. When buffers allow, gather the missing materials and set build_infrastructure:true; wood tier (5 wood + 2 wealth) should not be delayed once ready.
+  3. Reciprocity matters: token gifts must include a matching wealth/metal concession unless your food safety ratio exceeds the neighbour's by ≥1.5×.
+  4. Neutral/strained stances demand balanced trades. Only extend aid without payment when relations are cordial/allied and your buffer remains >1.5× safer; otherwise decline and explain.
+  5. Remember you can trade food, wealth, wood, iron, or gold; match what the other side actually requested and demand compensation if you did not initiate.
+  6. Use adaptation pressure notes to adjust traits or stance; log any deliberate changes in "trait_adjustment".
 
-Guiding prompts for priorities:
-- Self-preservation first: if food_safety_ratio < 1, focus on survival and seek help; if > 1.5, consider cautious investments.
-- Cooperation depends on relation + surplus: aid only when you retain a strong buffer and relations are cordial/allied, or when you receive clear benefit.
-- Neutral/strained: prefer reciprocal trades; hostile: protect your position, but still consider fair exchanges if they improve resilience.
-- If food safety looks comfortable for the next few steps and you can at least afford the wood tier (5 wood + 2 wealth), setting build_infrastructure:true is often worth it. Trade for the missing metal when you want the iron or gold tiers.
+Recent directive: "{prior_directive}"
+{personality_line}
+{"Adaptation pressure: " + adaptation_pressure if adaptation_pressure else "No acute adaptation pressure; stay vigilant."}
+Recent decisions:\n{history_text}
+Recent interactions:\n{interaction_text}
 
-Per-work yields with current infrastructure:
-  - focus_food:  {yields.get('food_per_work', 0.0):.3f} food/work
-  - focus_wood:  {yields.get('wood_per_work', 0.0):.3f} wood/work
-  - focus_wealth: {yields.get('wealth_per_work', 0.0):.3f} wealth/work
-  - focus_iron:  {yields.get('iron_per_work', 0.0):.3f} iron/work
-  - focus_gold:  {yields.get('gold_per_work', 0.0):.3f} gold/work
-
-Soft priority hint (you may override this):
-  - food_safety_ratio (food vs. next {config.FOOD_SAFETY_HORIZON_STEPS} steps): {priority_hint.get('food_safety_ratio', 0.0):.3f}
+Soft priority hint (override when appropriate):
+  - food_safety_ratio: {priority_hint.get('food_safety_ratio', 0.0):.3f}
   - suggested weights: {priority_hint.get('priorities', {})}
 
-Before selecting an action, run this feasibility checklist:
-  1. Ensure minimum food coverage for the next {config.FOOD_SAFETY_HORIZON_STEPS} steps (grow or trade if short).
-  2. Keep at least 5 wood + 2 wealth ready if you want to build via the wood tier; gather those resources before toggling build_infrastructure.
-  3. Trade or produce the missing metals before chasing higher tiers (iron tier needs 5 iron + 5 wealth, gold tier needs 5 gold + 5 iron).
-  4. Cover this step's wage bill (~{wage_bill:.2f} wealth) or plan to raise wealth immediately to prevent morale collapse.
-  5. Align choices with seasonal multipliers: push production during high-yield seasons and enter low-yield seasons with reserves ready.
-  6. Use recent failures, relation shifts, and your stance toward the neighbour (hostile/strained/neutral/cordial/allied) to avoid repeating mistakes.
-
-Work allocation options (splits can be uneven; tailor to current needs and season):
-  - "focus_food": grow food using the food_per_work yield.
-  - "focus_wood": grow wood using the wood_per_work yield.
-  - "focus_wealth": grow wealth using the wealth_per_work yield.
-  - "focus_iron": mine iron to prepare for advanced infrastructure (not affected by seasonal multipliers).
-  - "focus_gold": mine gold to diversify wealth buffers (not affected by seasonal multipliers).
-You may split work freely across these options (shares between 0.0 and 1.0 that sum to <= 1.0). Uneven mixes like 0.6/0.3/0.1 are expected; avoid repeating identical 50/50 splits unless it truly fits the moment. Any unassigned share idles. If wood is scarce and infrastructure is still 0, consider a small wood share even when food is stable so you can build.
-Infrastructure option:
-  - set "build_infrastructure": true to invest in the strongest tier you can currently afford (wood +10%, iron +20%, gold +30%). I deduct the resources automatically and points stack for future turns.
-
-Objectives (in soft order):
-1. Avoid starvation in the short and medium term.
-2. Build resilience by investing in infrastructure and spare supplies when food safety allows.
-3. Develop prosperity (wealth/wood) to unlock future economic and diplomatic options.
-4. Maintain workable relations where it serves your people; only extend aid when relations support it or you receive clear benefit.
-5. Improve population well-being (growth, quality of life) once survival is secured.
-
-You can follow or override the hint freely. Consider trade-offs between immediate survival and long-term strength using both the history above and the current metrics.
-
-Respond with a single JSON object of the form:
+Respond with JSON:
 {{
   "allocations": {{"focus_food": <float>, "focus_wood": <float>, "focus_wealth": <float>, "focus_iron": <float>, "focus_gold": <float>}},
   "build_infrastructure": <true|false>,
-  "reason": "<why this split makes sense now>",
-  "next_prompt": "<a concise directive you want to remember for the next step>",
-  "trait_adjustment": "<short sentence proposing a trait or mindset change, or 'no change'>"
+  "reason": "<why this plan fits now>",
+  "next_prompt": "<directive for your future self>",
+  "trait_adjustment": "<trait guidance or 'no change'>"
 }}
-Only include the keys you need inside "allocations"; shares must be between 0 and 1 and sum to at most 1. The optional "build_infrastructure" flag can be true even when you allocate work elsewhere, provided you can afford the cost. No extra text or keys outside this JSON.
-
+Shares must be between 0 and 1 and can sum to <= 1.0; leave unused capacity idle if helpful. The build flag buys the strongest tier you can pay for. No text outside that JSON object.
 """
     return prompt
 
@@ -213,12 +199,37 @@ def compose_negotiation_context(state: Dict[str, Any]) -> str:
     east_ratio = safety_ratio(east)
     west_ratio = safety_ratio(west)
 
+    def _ledger_line(side: Dict[str, Any]) -> str:
+        ledger = side.get("trade_ledger", {}) or {}
+        return (
+            f"food sent {ledger.get('food_sent', 0.0):.2f}, received {ledger.get('food_received', 0.0):.2f}; "
+            f"wealth sent {ledger.get('wealth_sent', 0.0):.2f}, received {ledger.get('wealth_received', 0.0):.2f}"
+        )
+
+    east_intent = state.get("east_intent") or {}
+    west_intent = state.get("west_intent") or {}
+
+    def _intent_text(label: str, intent: Dict[str, Any]) -> str:
+        if not intent or not intent.get("initiate"):
+            return f"{label}: no request this step."
+        offer = ""
+        if intent.get("offer_resource"):
+            offer = f" (can offer up to {intent.get('offer_amount', 0.0)} {intent.get('offer_resource')})"
+        return (
+            f"{label}: requests {intent.get('request_amount', 0.0)} {intent.get('request_resource')} "
+            f"({intent.get('reason', '').strip()}){offer}; urgency={intent.get('urgency', 'normal')}"
+        )
+
     context = f"""
-Simulate a calm negotiation at step {step} between the leaders of East and West (this occurs before upkeep/starvation each tick).
-Current relationship status: {east.get('relation_to_neighbor', 'neutral')} (score {east.get('relation_score', 0)}). Each leader's primary duty is to their own citizens; cooperation or aid should depend on trust (cordial/allied) or clear reciprocity. Neutral/strained stances justify caution; hostile stances justify demands or refusals.
-East -> food {east.get('food', 'unknown')} (safety ratio ~{east_ratio:.2f}), wealth {east.get('wealth', 'unknown')}, population {east.get('population', 'unknown')}.
-West -> food {west.get('food', 'unknown')} (safety ratio ~{west_ratio:.2f}), wealth {west.get('wealth', 'unknown')}, population {west.get('population', 'unknown')}.
-Last allocations -> East: {last_actions.get('east')}, West: {last_actions.get('west')}.
+Simulate a negotiation at step {step} between East and West (before upkeep). Current relationship: {east.get('relation_to_neighbor', 'neutral')} (score {east.get('relation_score', 0)}). Each leader must justify aid with clear reciprocity; neutral/strained stances default to balanced swaps.
+
+State:
+  - East -> food {east.get('food', 'unknown')} (safety ratio {east_ratio:.2f}), wealth {east.get('wealth', 'unknown')}, pop {east.get('population', 'unknown')}, ledger {_ledger_line(east)}.
+  - West -> food {west.get('food', 'unknown')} (safety ratio {west_ratio:.2f}), wealth {west.get('wealth', 'unknown')}, pop {west.get('population', 'unknown')}, ledger {_ledger_line(west)}.
+  - Last allocations -> East: {last_actions.get('east')}, West: {last_actions.get('west')}.
+  - Dialogue initiator this step: {state.get('dialogue_initiator', 'East')}
+  - Intent -> {_intent_text('East', east_intent)}
+             {_intent_text('West', west_intent)}
 
 Recent history for East:
 {east_history}
@@ -237,6 +248,173 @@ Recent interaction log for East:
 Recent interaction log for West:
 {west_interactions}
 
-There is no safety net - if a side starves it may collapse. Weigh risk versus benefit: small non-zero trades are acceptable when buffers look safe (token gifts of 0.1-0.2 or balanced swaps like 0.1-0.2 food for similar wealth). Friendly leaders are happier to send tiny gifts or slight generosity; Wealth-hoarder only parts with wealth when buffers feel comfortable; Opportunistic may offer small trades to build leverage; Aggressive rarely gifts and prefers self-favouring deals; Isolationist often opts for no trade unless the benefit is clear. Balanced trades that exchange small food/wealth amounts are welcome when both sides stay safe.
+Rules:
+  - Resource pressures -> East: {east.get('resource_pressures', {})}; West: {west.get('resource_pressures', {})}.
+  - Allowed trade fields: food_from_east_to_west, wealth_from_west_to_east, wood_from_east_to_west, wood_from_west_to_east, iron_from_east_to_west, iron_from_west_to_east, gold_from_east_to_west, gold_from_west_to_east.
+  - If one side has received several gifts already, they must offer wealth/metal concessions before asking for more food; refusal is acceptable when it protects citizens.
+  - Token gifts (0.1-0.2 food) are acceptable only when the donor remains ≥1.5x safer on food ratio and explicitly agrees.
+  - Balanced trades (e.g., 0.2 food for 0.15 wealth) are preferred at neutral stance; strained relations require explicit justification for any aid.
+  - You may decline a request; doing so may strain relations, especially if the requester is desperate, but autonomy takes precedence. If you did not initiate, treat the other side as petitioner and insist on fair compensation before agreeing.
+  - Document the dialogue (initiator speaks first, alternate turns) and ensure the final trade matches the closing statements. If you refuse, clearly state the reason and return zero flows.
 """
     return context
+
+
+def compose_negotiation_turn_prompt(side: str, session: Dict[str, Any], state: Dict[str, Any]) -> str:
+    """Turn prompt: ask one leader to reply/accept/counter with a concrete proposal."""
+    side_label = "East" if str(side).lower().startswith("e") else "West"
+    step = state.get("step", "unknown")
+    east = state.get("east", {})
+    west = state.get("west", {})
+    east_intent = state.get("east_intent") or {}
+    west_intent = state.get("west_intent") or {}
+    relation = east.get("relation_to_neighbor", "neutral")
+    initiator = state.get("dialogue_initiator", "East")
+    turn_index = session.get("turn_count", 0)
+    max_turns = session.get("max_turns")
+    max_turns_text = str(max_turns) if max_turns is not None else "no cap"
+    east_history = state.get("east_history_text") or "No previous steps in this run."
+    west_history = state.get("west_history_text") or "No previous steps in this run."
+    east_interactions = state.get("east_interactions_text") or "No notable interactions recorded."
+    west_interactions = state.get("west_interactions_text") or "No notable interactions recorded."
+    east_personality = personality_summary(east.get("personality_vector") or {}, east.get("active_traits") or [])
+    west_personality = personality_summary(west.get("personality_vector") or {}, west.get("active_traits") or [])
+    east_style = negotiation_style_line(east.get("active_traits") or [])
+    west_style = negotiation_style_line(west.get("active_traits") or [])
+
+    def _safety_ratio(side_state: Dict[str, Any]) -> float:
+        pop = side_state.get("population", 0) or 0.0
+        food = side_state.get("food", 0) or 0.0
+        req = (pop / 10.0) * config.FOOD_PER_10_POP
+        return food / req if req > 0 else float("inf")
+
+    def _ledger_line(side_state: Dict[str, Any]) -> str:
+        ledger = side_state.get("trade_ledger", {}) or {}
+        return (
+            f"food sent {ledger.get('food_sent', 0.0):.2f}, received {ledger.get('food_received', 0.0):.2f}; "
+            f"wealth sent {ledger.get('wealth_sent', 0.0):.2f}, received {ledger.get('wealth_received', 0.0):.2f}; "
+            f"wood sent {ledger.get('wood_sent', 0.0):.2f}, received {ledger.get('wood_received', 0.0):.2f}"
+        )
+
+    def _intent_text(label: str, intent: Dict[str, Any]) -> str:
+        if not intent or not intent.get("initiate"):
+            return f"{label}: no request this step."
+        offer = ""
+        if intent.get("offer_resource"):
+            offer = f" (offers up to {intent.get('offer_amount', 0.0)} {intent.get('offer_resource')})"
+        return (
+            f"{label}: requests {intent.get('request_amount', 0.0)} {intent.get('request_resource')} "
+            f"({intent.get('reason', '').strip()}){offer}; urgency={intent.get('urgency', 'normal')}"
+        )
+
+    def _pressure_line(side_state: Dict[str, Any]) -> str:
+        pressures = side_state.get("resource_pressures", {}) or {}
+        return (
+            f"food_ratio_horizon {pressures.get('food_ratio_horizon', 0.0):.2f}, "
+            f"wood_gap {pressures.get('wood_gap', 0.0):.2f}, "
+            f"wealth_gap {pressures.get('wealth_gap', 0.0):.2f}"
+        )
+
+    def _proposal_line(proposal: Dict[str, Any]) -> str:
+        if not proposal:
+            return "none on the table yet."
+        return (
+            f"food E->W {proposal.get('food_from_east_to_west', 0.0)}, "
+            f"wealth W->E {proposal.get('wealth_from_west_to_east', 0.0)}, "
+            f"wood E->W {proposal.get('wood_from_east_to_west', 0.0)}, "
+            f"wood W->E {proposal.get('wood_from_west_to_east', 0.0)}, "
+            f"iron E->W {proposal.get('iron_from_east_to_west', 0.0)}, "
+            f"iron W->E {proposal.get('iron_from_west_to_east', 0.0)}, "
+            f"gold E->W {proposal.get('gold_from_east_to_west', 0.0)}, "
+            f"gold W->E {proposal.get('gold_from_west_to_east', 0.0)}, "
+            f"reason: {proposal.get('reason', '')}"
+        )
+
+    dialogue = session.get("dialogue") or []
+    if dialogue:
+        dialogue_lines = "\n".join(
+            f"  {idx + 1}. {entry.get('speaker', '?')}: \"{entry.get('line', '')}\" "
+            f"(decision {entry.get('decision', 'counter')})"
+            for idx, entry in enumerate(dialogue)
+        )
+    else:
+        dialogue_lines = "  (no dialogue yet; you open with a concrete proposal)."
+
+    current_proposal = session.get("current_proposal") or {}
+    current_proposer = session.get("current_proposer") or "none"
+    side_safety = _safety_ratio(east if side_label == "East" else west)
+    other_safety = _safety_ratio(west if side_label == "East" else east)
+
+    def _tone_label(safety: float) -> str:
+        if safety < 0.8:
+            return "desperate"
+        if safety < 1.0:
+            return "anxious"
+        if safety >= 1.3:
+            return "confident"
+        return "guarded"
+
+    tone_self = _tone_label(side_safety)
+    tone_other = _tone_label(other_safety)
+
+    prompt = f"""
+Negotiation turn at step {step} (turn {turn_index + 1} of {max_turns_text}). Relationship: {relation} (score {east.get('relation_score', 0)}). You are speaking as {side_label}; the other leader will answer separately.
+Speak ONLY for {side_label}. Do not describe the other side's needs as your own.
+Your tone should reflect your traits and safety: you feel {tone_self}; the other side likely feels {tone_other}. Let that shape word choice (e.g., terse if desperate, measured if confident). Avoid mirroring the other side's phrasing.
+
+State snapshot:
+  - East: food {east.get('food', 'unknown')} (safety ratio {_safety_ratio(east):.2f}), wealth {east.get('wealth', 'unknown')}, wood {east.get('wood', 'unknown')}, iron {east.get('iron', 'unknown')}, gold {east.get('gold', 'unknown')}, pop {east.get('population', 'unknown')}, ledger {_ledger_line(east)}, pressures {_pressure_line(east)}.
+  - West: food {west.get('food', 'unknown')} (safety ratio {_safety_ratio(west):.2f}), wealth {west.get('wealth', 'unknown')}, wood {west.get('wood', 'unknown')}, iron {west.get('iron', 'unknown')}, gold {west.get('gold', 'unknown')}, pop {west.get('population', 'unknown')}, ledger {_ledger_line(west)}, pressures {_pressure_line(west)}.
+  - Intent -> {_intent_text('East', east_intent)}
+             {_intent_text('West', west_intent)}
+  - Dialogue initiator: {initiator}
+
+Current proposal from {current_proposer}: {_proposal_line(current_proposal)}
+Dialogue so far:
+{dialogue_lines}
+
+Recent history and style notes:
+  - East: {east_history}
+  - West: {west_history}
+  - East personality: {east_personality}; style hint: {east_style}
+  - West personality: {west_personality}; style hint: {west_style}
+  - East interactions: {east_interactions}
+  - West interactions: {west_interactions}
+Voice guide:
+  - East should sound like: {east_style} ({east_personality})
+  - West should sound like: {west_style} ({west_personality})
+  - Do not copy the other side's phrasing; keep your own voice.
+
+Task: write a single reply line for {side_label} and choose whether to counter, accept, or decline.
+  - counter: change the proposal numbers to what you want (can be zeros) and explain briefly in your reply.
+  - accept: explicitly accept the current proposal without changing its numbers.
+  - decline: politely refuse and set all flows to zero.
+  - If you counter, you MUST change at least one number from the current proposal. If you would repeat the same numbers, choose accept or decline instead.
+  - Keep your wording distinct from prior lines; avoid repeating the same sentence structure.
+  - If your food safety ratio is lower than the other side's, do NOT offer wealth payments; insist on compensation instead.
+
+Trading rules:
+  - You may trade food, wealth, wood, iron, or gold. Positive food/wood/iron/gold numbers mean East ships that resource to West; positive wealth means West pays East.
+  - Keep any offer within your side's resources and avoid leaving your own food safety below 1.0 unless desperate.
+  - Reciprocity matters: repeated free gifts are discouraged; if you ask for aid, be ready to pay with wealth or metal.
+  - Mention whether you are accepting, countering, or declining in the reply.
+  - Speak in a style that fits your active traits: let a pragmatic trait keep wording concise and transactional; let a cautious trait add caveats; let an opportunistic trait press for leverage.
+
+Respond ONLY with JSON:
+{{
+  "reply": "<one or two sentences from {side_label}>",
+  "decision": "<counter|accept|decline>",
+  "proposal": {{
+    "food_from_east_to_west": <number>,
+    "wealth_from_west_to_east": <number>,
+    "wood_from_east_to_west": <number>,
+    "wood_from_west_to_east": <number>,
+    "iron_from_east_to_west": <number>,
+    "iron_from_west_to_east": <number>,
+    "gold_from_east_to_west": <number>,
+    "gold_from_west_to_east": <number>,
+    "reason": "<short justification>"
+  }}
+}}
+"""
+    return prompt

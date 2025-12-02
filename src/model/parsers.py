@@ -1,4 +1,4 @@
-"""Parsing and sanitisation helpers shared by LLM client calls."""
+"""Quick card: helpers to coerce LLM text into structured decisions."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 
 def parse_json_response(raw_text: str) -> Dict[str, Any] | None:
-    """Coerce LLM text into JSON if possible."""
+    """Parsing cue: do my best to fish a JSON object out of messy LLM text."""
 
     def _try_load(candidate: str) -> Dict[str, Any] | None:
         try:
@@ -42,8 +42,7 @@ def parse_json_response(raw_text: str) -> Dict[str, Any] | None:
     if result is not None:
         return result
 
-    # As a last resort, scan for balanced JSON objects (handles cases where the
-    # model emits multiple JSON blobs sequentially). Return the last valid object.
+    # Last ditch: sweep the string for balanced JSON chunks and keep the last sane one.
     in_string = False
     escape = False
     depth = 0
@@ -78,7 +77,7 @@ def parse_json_response(raw_text: str) -> Dict[str, Any] | None:
 
 
 def extract_action_hint(text: str, allowed_actions: tuple[str, ...]) -> Dict[str, Any] | None:
-    """Heuristic salvage when JSON is missing but an action hint exists."""
+    """Heuristic cue: if JSON fails, look for a loose action keyword to salvage intent."""
     lower = (text or "").lower()
     for action in allowed_actions:
         if action in lower:
@@ -87,7 +86,7 @@ def extract_action_hint(text: str, allowed_actions: tuple[str, ...]) -> Dict[str
 
 
 def sanitise_allocations(raw: Any, allowed_actions: tuple[str, ...]) -> Dict[str, float]:
-    """Filter and normalise allocation dictionary."""
+    """Cleanup note: filter allocation dicts and normalise shares safely."""
     allocations: Dict[str, float] = {}
     if isinstance(raw, dict):
         for key, value in raw.items():

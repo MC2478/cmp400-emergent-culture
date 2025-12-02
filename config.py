@@ -72,6 +72,12 @@ RESOURCE_DISPLAY_DECIMALS: int = 2
 
 # Trade guardrails
 MAX_UNRECIPROCATED_GIFTS: int = 3
+# Max turns for negotiation; when None, stall protection still ends talks on repetition.
+NEGOTIATION_MAX_TURNS: int | None = 12
+
+# Long-run summaries
+LONG_TERM_SUMMARY_INTERVAL: int = 50
+MAX_LONG_TERM_NOTES: int = 6
 
 # Seasons
 SEASONS = ["spring", "summer", "autumn", "winter"]

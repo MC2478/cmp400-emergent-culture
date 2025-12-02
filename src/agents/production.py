@@ -1,4 +1,4 @@
-"""Production helpers to keep LeaderAgent lean."""
+"""Quick card: production helpers to keep LeaderAgent lean."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ if TYPE_CHECKING:
 
 
 def work_points(territory: TerritoryState) -> float:
-    """Convert population to fractional work points, factoring morale."""
+    """Work points cue: turn population into work capacity, factoring morale."""
     base = max(0.0, territory.population / config.PEOPLE_PER_WORK_POINT)
     return base * max(0.0, territory.effective_work_multiplier)
 
 
 def effective_yields(territory: TerritoryState) -> Dict[str, float]:
-    """Per-work yields after infrastructure bonuses."""
+    """Yield cue: per-work outputs after infrastructure bonuses."""
     level = territory.infrastructure_level
     food_mult = 1.0 + level * config.INFRA_FOOD_YIELD_MULT_PER_LEVEL
     wood_mult = 1.0 + level * config.INFRA_WOOD_YIELD_MULT_PER_LEVEL
@@ -39,7 +39,7 @@ def apply_allocations(
     season: str,
     season_multipliers: Dict[str, float],
 ) -> Dict[str, float]:
-    """Apply production based on allocations and return produced amounts."""
+    """Production card: apply allocations for the season and return produced amounts."""
     wp = work_points(territory)
     yields = effective_yields(territory)
     season_mult = season_multipliers.get(season, 1.0)

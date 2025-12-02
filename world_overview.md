@@ -4,7 +4,7 @@ I simulate two asymmetric territories (East and West) to study emergent dynamics
 
 # Modules and Responsibilities
 
-- **main.py** - CLI entry point that builds `WorldModel`, opens per-leader JSONL logs plus a config summary inside a timestamped `logs/run_*` folder, advances the requested steps (or until collapse), saves/prints summaries, and tees console output to `logs/output_log_seed<seed>_steps<steps>[_runN].txt`.
+- **main.py** - CLI entry point built around a `RunConfig` dataclass. When executed directly it prompts for steps/seed, wires a `Tee` so stdout/stderr are mirrored to `logs/output_log_seed<seed>_steps<steps>[_runN].txt`, builds `WorldModel`, opens per-leader JSONL logs plus a config summary inside a timestamped `logs/run_*` folder, advances the requested steps (or until collapse), saves the chronicle, and calls `summarize_chronicle()` to print quick min/mean/max population and food stats for each side.
 - **src/model/world_model.py** - Mesa model wiring that orchestrates phases (actions + negotiation + wages + upkeep + logging) using helper modules, tracks `current_step_log` for summaries, and exposes helpers like `enable_agent_state_logging()` and `log_agent_state()` so the run artefacts capture leader state.
 - **src/model/environment.py** - Deterministic, seed-driven environment generator that splits total yield budgets between East/West, hands out exclusive iron/gold mining rights, derives richness metrics, and tags each territory with a category used for starting trait selection.
 - **src/model/economy.py** - Wages, morale/strike handling, and population/upkeep helpers.
@@ -12,7 +12,7 @@ I simulate two asymmetric territories (East and West) to study emergent dynamics
 - **src/model/log_utils.py** - Chronicle append helpers and console summary formatting (ASCII bullets).
 - **src/agents/leader.py** - `TerritoryState` and `LeaderAgent`. A leader inspects state, optionally calls the LLM, applies the action (allocations + build flag), and records memory.
 - **src/agents/production.py** - Work point/yield calculation and allocation application.
-- **src/model/llm_client.py** - LM Studio HTTP wrapper that calls prompt builders, parses JSON responses for both decisions and negotiations, and falls back safely.
+- **src/model/llm_client.py** - LM Studio HTTP wrapper (`LLMConfig` defaults to `http://127.0.0.1:1234/v1/chat/completions`, `meta-llama-3.1-8b-instruct`, temperature 0.1, 128 tokens) that calls prompt builders, parses JSON responses for both decisions and negotiations, and falls back safely.
 - **src/model/prompt_builder.py** / **parsers.py** - Prompt assembly and JSON coercion/validation utilities shared by the LLM client.
 - **src/model/traits.py** - Trait catalogue plus adaptation rules. Blends personality vectors, applies pressure-based auto-adjustments, tracks streaks, and parses LLM trait adjustment text into structured actions.
 - **config.py** - Central numeric knobs (starting resources, yields, infrastructure multipliers/costs, wages, population rules, rounding, seasons).
@@ -20,9 +20,10 @@ I simulate two asymmetric territories (East and West) to study emergent dynamics
 # Run Artefacts & Logging
 
 - Every CLI invocation uses `_choose_run_artifact_path()` to create an isolated `logs/run_<timestamp>_seed<seed>_steps<steps>` directory that stores the chronicle JSON, per-leader agent-state JSONL files, a human-readable config summary, and a tee of console output.
+- After writing the chronicle, `summarize_chronicle()` reloads it to report total event counts plus min/mean/max population and food for East and West so I can sanity-check the run before digging into the artefacts.
 - `WorldModel.save_config_summary()` captures the sampled environment, asymmetric yields, infrastructure tiers, and allowed actions, so each run artifact bundles both behaviour and its knobs.
 - `WorldModel.enable_agent_state_logging()` + `log_agent_state()` write one JSON line per leader per step, including resource snapshots, trait state, pressure counters, memory metadata, and whether the LLM drove the decision.
-- `log_utils.print_step_summary()` emits the console summary and calls `append_chronicle_action()` / `append_chronicle_upkeep()` so the chronicle records actions, negotiations, trait events, wage/upkeep outcomes, and relation changes for later analysis.
+- `log_utils.print_step_summary()` emits the console summary (per-territory resource tables, wage/morale rows, upkeep tables, and negotiation transcripts) and calls `append_chronicle_action()` / `append_chronicle_upkeep()` so the chronicle records actions, negotiations, trait events, wage/upkeep outcomes, and relation changes for later analysis.
 
 # Resources and State
 
