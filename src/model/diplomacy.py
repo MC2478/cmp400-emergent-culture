@@ -23,6 +23,7 @@ class NegotiationSession:
     accepted_by: str | None = None
     turn_count: int = 0
     stall_counter: int = 0
+    total_counters: int = 0
 
     def payload(self) -> Dict[str, Any]:
         """Lightweight view used by prompt builders."""
@@ -374,6 +375,24 @@ def run_negotiation(model: Any) -> None:
                 return False
         return True
 
+    def _proposal_magnitude(proposal: Dict[str, Any]) -> float:
+        total = 0.0
+        for key in (
+            "food_from_east_to_west",
+            "wealth_from_west_to_east",
+            "wood_from_east_to_west",
+            "wood_from_west_to_east",
+            "iron_from_east_to_west",
+            "iron_from_west_to_east",
+            "gold_from_east_to_west",
+            "gold_from_west_to_east",
+        ):
+            try:
+                total += abs(float(proposal.get(key, 0.0) or 0.0))
+            except (TypeError, ValueError):
+                continue
+        return total
+
     while (session.max_turns is None or session.turn_count < session.max_turns) and session.outcome == "pending":
         turn = llm_client.negotiate_turn(side=speaker, session=session.payload(), state=state)
         decision_label = str(turn.get("decision", "counter")).strip().lower()
@@ -384,6 +403,8 @@ def run_negotiation(model: Any) -> None:
         log_decision = decision_label
         if decision_label == "counter" and not session.current_proposal:
             log_decision = "offer"
+        if decision_label == "counter":
+            session.total_counters += 1
         proposal_matches_current = bool(session.current_proposal) and _proposal_equal(proposal, session.current_proposal)
         if decision_label == "accept":
             if session.current_proposal:
@@ -391,6 +412,26 @@ def run_negotiation(model: Any) -> None:
             else:
                 decision_label = "counter"
                 log_decision = "offer"
+        if not session.current_proposal and (decision_label in ("accept", "decline") or not proposal or _proposal_close(proposal, {})):
+            # No proposal on the table: force an opening offer or end politely if nothing concrete.
+            if decision_label == "accept":
+                decision_label = "counter"
+                log_decision = "offer"
+                reply = reply + " (No proposal yet; stating an offer instead.)"
+            elif decision_label == "decline":
+                session.outcome = "declined"
+                session.dialogue.append({"speaker": speaker, "line": reply, "decision": "decline", "proposal": {}})
+                break
+            if not proposal or _proposal_close(proposal, {}):
+                # Still no numbers: end talks to avoid empty loops.
+                session.outcome = "declined"
+                session.dialogue.append({"speaker": speaker, "line": reply + " (No concrete proposal; ending talks.)", "decision": "decline", "proposal": {}})
+                break
+        if decision_label in ("counter", "offer") and _proposal_magnitude(proposal) < 0.05:
+            # Zero-ish proposals are noise; end the chat.
+            session.outcome = "declined"
+            session.dialogue.append({"speaker": speaker, "line": reply + " (Proposal too small; ending talks.)", "decision": "decline", "proposal": {}})
+            break
         if decision_label == "counter" and session.current_proposal and speaker != session.current_proposer and proposal_matches_current:
             # If you mirror the other side's offer without change, treat it as acceptance.
             decision_label = "accept"
@@ -413,6 +454,11 @@ def run_negotiation(model: Any) -> None:
             proposal = {}
             reply = reply + " (Talks stalled with minimal movement.)"
             session.stall_counter = 0
+        if decision_label == "counter" and session.total_counters >= 6:
+            decision_label = "decline"
+            log_decision = "decline"
+            proposal = {}
+            reply = reply + " (Too many counters; ending talks.)"
 
         session.dialogue.append(
             {"speaker": speaker, "line": reply, "decision": log_decision, "proposal": dict(proposal)}
@@ -606,7 +652,16 @@ def run_negotiation(model: Any) -> None:
         return 0.0
 
     intent_failure_reason = ""
-    intent_check_allowed = decision.get("negotiation_outcome") == "accepted"
+    intent_check_allowed = decision.get("negotiation_outcome") == "accepted" and (
+        abs(food_flow)
+        + abs(wealth_flow)
+        + abs(iron_e2w)
+        + abs(iron_w2e)
+        + abs(gold_e2w)
+        + abs(gold_w2e)
+        + abs(wood_e2w)
+        + abs(wood_w2e)
+    ) > 1e-6
     if intent_check_allowed and initiator_label in ("East", "West"):
         intent_ref = east_intent if initiator_label == "East" else west_intent
         request_resource = intent_ref.get("request_resource")

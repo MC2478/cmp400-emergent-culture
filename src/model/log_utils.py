@@ -225,15 +225,29 @@ def print_step_summary(
         west_before = negotiation_info["west_before"]
         west_after = negotiation_info["west_after"]
         dialogue_lines = entry.get("dialogue") or []
+        def _format_props(props: Dict[str, Any]) -> str:
+            if not props:
+                return "food 0, wealth 0, wood 0, iron 0, gold 0"
+            return (
+                f"food {props.get('food_from_east_to_west', 0)}, "
+                f"wealth {props.get('wealth_from_west_to_east', 0)}, "
+                f"woodE {props.get('wood_from_east_to_west', 0)}, woodW {props.get('wood_from_west_to_east', 0)}, "
+                f"ironE {props.get('iron_from_east_to_west', 0)}, ironW {props.get('iron_from_west_to_east', 0)}, "
+                f"goldE {props.get('gold_from_east_to_west', 0)}, goldW {props.get('gold_from_west_to_east', 0)}"
+            )
+
         if dialogue_lines:
             formatted = []
-            for line in dialogue_lines:
+            for turn_idx, line in enumerate(dialogue_lines, start=1):
                 speaker = line.get("speaker", "?")
                 text = line.get("line", "")
                 decision = line.get("decision")
-                tag = f"{speaker}: \"{text}\""
+                props = line.get("proposal") or {}
+                tag = f"({turn_idx}) {speaker}: \"{text}\""
                 if decision:
                     tag += f" [{decision}]"
+                if props:
+                    tag += f" | offer: {_format_props(props)}"
                 formatted.append(f"      {tag}")
             dialogue_block = "\n" + "\n".join(formatted)
         else:

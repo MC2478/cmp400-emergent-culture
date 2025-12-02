@@ -392,6 +392,9 @@ Task: write a single reply line for {side_label} and choose whether to counter, 
   - If you counter, you MUST change at least one number from the current proposal. If you would repeat the same numbers, choose accept or decline instead.
   - Keep your wording distinct from prior lines; avoid repeating the same sentence structure.
   - If your food safety ratio is lower than the other side's, do NOT offer wealth payments; insist on compensation instead.
+  - If no proposal is on the table (turn 1), do not accept or decline; put a concrete proposal with non-zero flows that fits your needs and constraints.
+  - Include a brief change note like "change: +food, +wealth" describing how your numbers differ from the current proposal.
+  - Let your traits color your phrasing (cautious adds caveats, opportunistic presses leverage, stoic stays terse). If you are desperate (low safety), be blunt; if confident, be measured.
 
 Trading rules:
   - You may trade food, wealth, wood, iron, or gold. Positive food/wood/iron/gold numbers mean East ships that resource to West; positive wealth means West pays East.
@@ -399,6 +402,7 @@ Trading rules:
   - Reciprocity matters: repeated free gifts are discouraged; if you ask for aid, be ready to pay with wealth or metal.
   - Mention whether you are accepting, countering, or declining in the reply.
   - Speak in a style that fits your active traits: let a pragmatic trait keep wording concise and transactional; let a cautious trait add caveats; let an opportunistic trait press for leverage.
+  - If the other side has already countered multiple times without moving, you may decline and end talks.
 
 Respond ONLY with JSON:
 {{

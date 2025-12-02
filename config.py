@@ -73,7 +73,7 @@ RESOURCE_DISPLAY_DECIMALS: int = 2
 # Trade guardrails
 MAX_UNRECIPROCATED_GIFTS: int = 3
 # Max turns for negotiation; when None, stall protection still ends talks on repetition.
-NEGOTIATION_MAX_TURNS: int | None = 12
+NEGOTIATION_MAX_TURNS: int | None = 8
 
 # Long-run summaries
 LONG_TERM_SUMMARY_INTERVAL: int = 50
