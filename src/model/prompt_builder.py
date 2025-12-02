@@ -1,4 +1,4 @@
-"""Prompt composition utilities for decisions and negotiations."""
+"""Quick card: prompt builders for decisions and negotiations."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from src.model.traits import negotiation_style_line, personality_summary
 
 
 def compose_prompt(state: Dict[str, Any]) -> str:
-    """Describe the state, enumerate valid actions, and demand JSON output."""
-    # [PRESENTATION] I show this builder when explaining how I steer the LLM toward concrete, auditable JSON decisions that respect food safety, infrastructure tiers, and historical context.
+    """Cue card: spell out the state, options, and JSON shape for the decision call."""
+    # Presentation cue: this builder shows how we steer the LLM into crisp, auditable JSON.
     name = state.get("territory", "Unknown")
     food = state.get("food", 0.0)
     wealth = state.get("wealth", 0.0)
@@ -46,6 +46,7 @@ def compose_prompt(state: Dict[str, Any]) -> str:
     other_trait_notes = state.get("other_trait_notes") or "No hypothesis about the neighbour yet."
     adaptation_pressure = state.get("adaptation_pressure") or ""
     personality_line = personality_summary(personality_vector, active_traits)
+    gift_note = state.get("gift_balance_note") or "No outstanding trade imbalance noted."
 
     def _gap_status(value: float) -> str:
         return "OK" if value >= 0 else "SHORTFALL"
@@ -116,6 +117,7 @@ Season outlook: current season="{current_season}" (food/wood yield x{current_sea
 Last self-set directive: "{prior_directive}"
 {personality_line}
 Belief about the other territory: {other_trait_notes}
+Gift balance status: {gift_note}
 {"Adaptation pressure: " + adaptation_pressure if adaptation_pressure else "No acute adaptation pressure; still stay alert to repeating mistakes."}
 If adaptation pressure appears, treat it as a signal to adjust traits or strategy; explicitly propose a suitable "trait_adjustment" if you believe a mindset change would help.
 {infra_prompt}
@@ -188,7 +190,7 @@ Only include the keys you need inside "allocations"; shares must be between 0 an
 
 
 def compose_negotiation_context(state: Dict[str, Any]) -> str:
-    """Outline the joint state so the LLM can improvise a mini dialogue and trade."""
+    """Negotiation card: lay out both sides so the LLM can riff dialogue plus trade."""
     step = state.get("step", "unknown")
     east = state.get("east", {})
     west = state.get("west", {})

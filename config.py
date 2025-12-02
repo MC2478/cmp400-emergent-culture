@@ -70,6 +70,9 @@ PARTIAL_PAY_RECOVERY: float = 0.5
 POP_DISPLAY_DECIMALS: int = 0
 RESOURCE_DISPLAY_DECIMALS: int = 2
 
+# Trade guardrails
+MAX_UNRECIPROCATED_GIFTS: int = 3
+
 # Seasons
 SEASONS = ["spring", "summer", "autumn", "winter"]
 SEASON_MULTIPLIERS = {

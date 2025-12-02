@@ -1,4 +1,4 @@
-"""Diplomacy helpers extracted from world_model.py for negotiations and relation scoring."""
+"""Quick card: diplomacy helpers for negotiations, trades, and relation scoring."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.model.traits import neutral_personality_vector
 
 
 def relation_label(score: float) -> str:
-    """Map relation score to a label."""
+    """Cue: turn a numeric relation score into a human-friendly label."""
     if score <= -1.5:
         return "hostile"
     if score <= -0.5:
@@ -28,7 +28,7 @@ def _sanitise_flow(trade: Dict[str, Any], key: str) -> float:
         delta = float(value)
     except (ValueError, TypeError):
         delta = 0.0
-    # I allow fractional flows so tiny gifts make it through, but still clamp extremes.
+    # Flow note: allow tiny fractional gifts, but clamp wild swings.
     return max(-5.0, min(5.0, delta))
 
 
@@ -36,7 +36,7 @@ _TOKEN_GIFT_KEYWORDS: tuple[str, ...] = ("token", "symbolic", "gesture", "gift",
 
 
 def _dialogue_suggests_token(decision: Dict[str, Any], trade: Dict[str, Any]) -> bool:
-    """I scan the dialogue, closing lines, and trade reason for explicit token gift wording."""
+    """Token cue: scan dialogue/closing lines/reason for explicit tiny-gift language."""
     bits: list[str] = []
     reason = trade.get("reason")
     if isinstance(reason, str):
@@ -65,7 +65,7 @@ def _token_gift_flow(
     east_safety: float,
     west_safety: float,
 ) -> tuple[float, float]:
-    """I decide whether a tiny food or wealth gift is safe to inject when the dialogue asks for one."""
+    """Token rule: decide if a tiny food/wealth gift is safe to inject."""
     token_size = 0.1
     min_ratio_cushion = 0.15
     food_gap_east = east_before["food"] - east_required
@@ -116,7 +116,7 @@ def _relation_delta_with_personality(delta: float, east_vec: Dict[str, float], w
 
 
 def relation_stance(relation: str, personality: Dict[str, float]) -> str:
-    """I turn relation + personality into a light stance label for logging."""
+    """Stance cue: mix relation + personality into a quick logging label."""
     vec = _safe_vec(personality)
     coop = vec.get("cooperation", 0.5)
     trust = vec.get("trust_in_others", 0.5)
@@ -150,7 +150,7 @@ def relation_stance(relation: str, personality: Dict[str, float]) -> str:
 
 
 def _is_tiny_gift(amount: float, donor_amount: float, donor_required: float) -> bool:
-    """I allow very small gifts while keeping donors above a minimum safety floor."""
+    """Tiny food rule: permit very small gifts only if the donor stays safe."""
     if amount <= 0 or donor_amount <= 0:
         return False
     tiny_absolute = amount <= 0.1
@@ -165,7 +165,7 @@ def _is_tiny_gift(amount: float, donor_amount: float, donor_required: float) -> 
 
 
 def _is_tiny_wealth_gift(amount: float, donor_amount: float) -> bool:
-    """I flag tiny wealth gifts so I can loosen clamps slightly without emptying coffers."""
+    """Tiny wealth rule: allow small coins to move without draining the giver."""
     if amount <= 0 or donor_amount <= 0:
         return False
     tiny_absolute = amount <= 0.1
@@ -182,7 +182,7 @@ def _value_ratio_for_side(
     gold_in: float,
     gold_out: float,
 ) -> float:
-    """I approximate a value ratio so I can spot exploitative deals."""
+    """Fairness cue: rough value ratio to sniff out exploitative deals."""
     value_in = food_in * 1.0 + wealth_in * 1.0 + gold_in * 1.0
     value_out = food_out * 1.0 + wealth_out * 1.0 + gold_out * 1.0
     if value_out < 1e-6:
@@ -191,7 +191,7 @@ def _value_ratio_for_side(
 
 
 def _update_exploitation_streak(model: Any, east_exploited: bool, west_exploited: bool) -> None:
-    """I increment or reset streaks based on per-side exploitation flags."""
+    """Pressure cue: bump/reset exploitation streaks based on this trade."""
     if east_exploited:
         model.east.exploitation_streak += 1
     else:
@@ -203,9 +203,8 @@ def _update_exploitation_streak(model: Any, east_exploited: bool, west_exploited
 
 
 def run_negotiation(model: Any) -> None:
-    """Run negotiation between East and West if the LLM client is enabled."""
-    # [PRESENTATION] I position this negotiation routine as the stand-in for the planned council,
-    # emphasising how dialogue plus trade classification currently give me the diplomacy hooks I will later expand.
+    """Negotiation card: orchestrate the LM Studio chat and apply the resulting flows."""
+    # Presentation cue: this is the stand-in for the future council mechanics.
     llm_client = getattr(model, "llm_client", None)
     if llm_client is None or not llm_client.enabled:
         return
@@ -270,7 +269,7 @@ def run_negotiation(model: Any) -> None:
         "gold": model.west.gold,
     }
 
-    # Clamp flows to available resources (allowing fractional gifts).
+    # Guardrail: cap flows to what each side actually holds (tiny fractions allowed).
     if food_flow > 0:
         food_flow = min(food_flow, float(model.east.food))
     elif food_flow < 0:
@@ -299,7 +298,7 @@ def run_negotiation(model: Any) -> None:
 
     east_safety, east_required = _food_safety(east_before)
     west_safety, west_required = _food_safety(west_before)
-    # --- Honour explicit token-gift language even if the flows were zeroed above. ---
+    # Token override: if the chat begged for a token gift, inject one if it's safe.
     if (
         abs(food_flow) < 1e-6
         and abs(wealth_flow) < 1e-6
@@ -321,8 +320,7 @@ def run_negotiation(model: Any) -> None:
     west_tiny_wealth = wealth_flow > 0 and _is_tiny_wealth_gift(wealth_flow, west_before["wealth"])
     east_tiny_wealth = wealth_flow < 0 and _is_tiny_wealth_gift(-wealth_flow, east_before["wealth"])
 
-    # --- Keep donors safer than the recipient before allowing substantive shipments. ---
-    # Block uphill gifts when donor is not safer.
+    # Safety first: only let substantive gifts flow downhill from the safer side.
     if food_flow > 0 and east_safety <= west_safety + 0.05 and not east_tiny_food:
         food_flow = 0
     if food_flow < 0 and west_safety <= east_safety + 0.05 and not west_tiny_food:
@@ -332,7 +330,7 @@ def run_negotiation(model: Any) -> None:
     if wealth_flow < 0 and (model.east.wealth <= model.west.wealth or east_safety <= west_safety + 0.1) and not east_tiny_wealth:
         wealth_flow = 0
 
-    # Only adjust direction if a non-zero trade was proposed (and not blocked above).
+    # Direction tweak: if something is flowing, steer it toward the hungrier side.
     if food_flow != 0 or wealth_flow != 0:
         if west_safety < 1.0 and east_safety >= 1.2 and food_flow <= 0:
             desired = max(0.1, round(max(0.0, west_required - west_before["food"]), 1))
@@ -341,7 +339,7 @@ def run_negotiation(model: Any) -> None:
             desired = max(0.1, round(max(0.0, east_required - east_before["food"]), 1))
             food_flow = -min(desired, float(model.west.food))
 
-    # Prevent wealth flowing from the poorer side to the richer one when the poorer side is food-insecure or clearly poorer.
+    # Fairness guard: block wealth leaving a poorer, hungrier side unless it's a tiny gift.
     if wealth_flow > 0 and (
         (west_safety < 1.1 and model.west.wealth < model.east.wealth)
         or model.west.wealth < 0.8 * model.east.wealth
@@ -352,6 +350,27 @@ def run_negotiation(model: Any) -> None:
         or model.east.wealth < 0.8 * model.west.wealth
     ) and not east_tiny_wealth:
         wealth_flow = 0
+
+    east_sent_any = food_flow > 0 or wealth_flow < 0 or iron_e2w > 0 or gold_e2w > 0
+    west_sent_any = food_flow < 0 or wealth_flow > 0 or iron_w2e > 0 or gold_w2e > 0
+    gift_cap_triggered = False
+    blocked_receiver = None
+    max_unreciprocated = getattr(config, "MAX_UNRECIPROCATED_GIFTS", 3)
+    if east_sent_any and not west_sent_any:
+        streak = getattr(model.west, "gift_streak_received", 0)
+        if streak >= max_unreciprocated:
+            gift_cap_triggered = True
+            blocked_receiver = "West"
+    elif west_sent_any and not east_sent_any:
+        streak = getattr(model.east, "gift_streak_received", 0)
+        if streak >= max_unreciprocated:
+            gift_cap_triggered = True
+            blocked_receiver = "East"
+    if gift_cap_triggered:
+        food_flow = wealth_flow = 0.0
+        iron_e2w = iron_w2e = 0.0
+        gold_e2w = gold_w2e = 0.0
+        east_sent_any = west_sent_any = False
 
     if food_flow > 0:
         model.east.food -= food_flow
@@ -406,6 +425,16 @@ def run_negotiation(model: Any) -> None:
         "gold": model.west.gold,
     }
 
+    if east_sent_any and not west_sent_any:
+        model.west.gift_streak_received += 1
+        model.east.gift_streak_received = 0
+    elif west_sent_any and not east_sent_any:
+        model.east.gift_streak_received += 1
+        model.west.gift_streak_received = 0
+    else:
+        model.east.gift_streak_received = 0
+        model.west.gift_streak_received = 0
+
     units_food = abs(food_flow)
     eps = 1e-6
     trade_type = "no_trade"
@@ -421,12 +450,15 @@ def run_negotiation(model: Any) -> None:
         + (west_after.get("gold", 0.0) - west_before.get("gold", 0.0))
     )
     gift_classified = False
-    if east_value < 0 and west_value > 0 and wealth_flow <= 0:
+    if east_sent_any and not west_sent_any:
         trade_type = "gift_from_east"
         gift_classified = True
-    elif west_value < 0 and east_value > 0 and wealth_flow >= 0:
+    elif west_sent_any and not east_sent_any:
         trade_type = "gift_from_west"
         gift_classified = True
+    if gift_cap_triggered:
+        trade_type = "no_trade"
+        gift_classified = False
 
     if not gift_classified and units_food > 0:
         if food_flow > 0:
@@ -469,7 +501,7 @@ def run_negotiation(model: Any) -> None:
                 else:
                     trade_type = f"mildly_exploitative_for_{victim}"
 
-    # --- Detect subtle exploitation so pressure counters and relation labels stay accurate. ---
+    # Exploitation sniff: detect lopsided trades even when price math was fuzzy.
     east_exploited = False
     west_exploited = False
     if not gift_classified:
@@ -536,6 +568,8 @@ def run_negotiation(model: Any) -> None:
         model.west.other_trait_notes = "No clear shift in style this step."
 
     trade_reason = str(trade.get("reason", "no trade reason provided")).strip() or "no trade reason provided"
+    if gift_cap_triggered and blocked_receiver:
+        trade_reason = f"Gift blocked: {blocked_receiver} must reciprocate before accepting more aid."
 
     relation_delta_actual = score - score_before
     entry = {
@@ -581,6 +615,8 @@ def run_negotiation(model: Any) -> None:
         "west_traits": list(model.west.active_traits),
         "east_exploited": east_exploited,
         "west_exploited": west_exploited,
+        "gift_streak_blocked": gift_cap_triggered,
+        "gift_block_receiver": blocked_receiver,
     }
     model.chronicle.append(entry)
     model.current_step_log["negotiation"] = {
