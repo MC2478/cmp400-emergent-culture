@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
+import random
 from typing import Any, Dict
 
 import config
@@ -375,23 +377,80 @@ def run_negotiation(model: Any) -> None:
                 return False
         return True
 
-    def _proposal_magnitude(proposal: Dict[str, Any]) -> float:
-        total = 0.0
-        for key in (
-            "food_from_east_to_west",
-            "wealth_from_west_to_east",
-            "wood_from_east_to_west",
-            "wood_from_west_to_east",
-            "iron_from_east_to_west",
-            "iron_from_west_to_east",
-            "gold_from_east_to_west",
-            "gold_from_west_to_east",
-        ):
-            try:
-                total += abs(float(proposal.get(key, 0.0) or 0.0))
-            except (TypeError, ValueError):
-                continue
-        return total
+def _proposal_magnitude(proposal: Dict[str, Any]) -> float:
+    total = 0.0
+    for key in (
+        "food_from_east_to_west",
+        "wealth_from_west_to_east",
+        "wood_from_east_to_west",
+        "wood_from_west_to_east",
+        "iron_from_east_to_west",
+        "iron_from_west_to_east",
+        "gold_from_east_to_west",
+        "gold_from_west_to_east",
+    ):
+        try:
+            total += abs(float(proposal.get(key, 0.0) or 0.0))
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _sigmoid(x: float) -> float:
+    try:
+        return 1.0 / (1.0 + math.exp(-x))
+    except OverflowError:
+        return 0.0 if x < 0 else 1.0
+
+
+def _acceptance_probability(
+    *,
+    east_ratio: float,
+    west_ratio: float,
+    east_safety: float,
+    west_safety: float,
+    relation_score: float,
+    relation_label: str,
+    east_vec: Dict[str, float],
+    west_vec: Dict[str, float],
+    trade_value: float,
+) -> tuple[float, float]:
+    """Score-to-probability: fairness + safety + relation + traits + size penalty."""
+
+    def _fairness_component(ratio: float) -> float:
+        return max(0.0, 1.0 - abs(1.0 - ratio))
+
+    fairness = (_fairness_component(east_ratio) + _fairness_component(west_ratio)) / 2.0
+
+    safety = 0.0
+    if east_safety >= 1.0 and west_safety >= 1.0:
+        safety = 0.2
+    elif east_safety < 0.9 or west_safety < 0.9:
+        safety = -0.2
+
+    relation_bonus = 0.0
+    if relation_label == "allied":
+        relation_bonus = 0.4
+    elif relation_label == "cordial":
+        relation_bonus = 0.2
+    elif relation_label == "strained":
+        relation_bonus = -0.2
+    elif relation_label == "hostile":
+        relation_bonus = -0.4
+
+    def _trait_push(vec: Dict[str, float]) -> float:
+        coop = float(vec.get("cooperation", 0.5) or 0.5)
+        trust = float(vec.get("trust_in_others", 0.5) or 0.5)
+        aggression = float(vec.get("aggression", 0.5) or 0.5)
+        return (coop + trust) * 0.3 - aggression * 0.2
+
+    trait_adj = (_trait_push(east_vec) + _trait_push(west_vec)) / 2.0
+
+    size_adj = -0.2 if trade_value > 4.0 else 0.0
+
+    score = fairness + safety + relation_bonus + trait_adj + size_adj
+    prob = _sigmoid(score)
+    return prob, score
 
     while (session.max_turns is None or session.turn_count < session.max_turns) and session.outcome == "pending":
         turn = llm_client.negotiate_turn(side=speaker, session=session.payload(), state=state)
@@ -483,6 +542,70 @@ def run_negotiation(model: Any) -> None:
     if session.outcome == "pending":
         session.outcome = "no_agreement"
     outcome_reason = "max turns reached without agreement" if session.outcome == "no_agreement" else session.outcome
+
+    acceptance_meta: Dict[str, float] = {}
+    if session.outcome == "accepted":
+        proposed_trade = _normalise_trade(session.current_proposal, "accepted")
+
+        def _value_ratios(trade_vals: Dict[str, Any]) -> tuple[float, float]:
+            food_flow = _sanitise_flow(trade_vals, "food_from_east_to_west")
+            wealth_flow = _sanitise_flow(trade_vals, "wealth_from_west_to_east")
+            iron_e2w = max(0.0, _sanitise_flow(trade_vals, "iron_from_east_to_west"))
+            iron_w2e = max(0.0, _sanitise_flow(trade_vals, "iron_from_west_to_east"))
+            gold_e2w = max(0.0, _sanitise_flow(trade_vals, "gold_from_east_to_west"))
+            gold_w2e = max(0.0, _sanitise_flow(trade_vals, "gold_from_west_to_east"))
+            wood_e2w = max(0.0, _sanitise_flow(trade_vals, "wood_from_east_to_west"))
+            wood_w2e = max(0.0, _sanitise_flow(trade_vals, "wood_from_west_to_east"))
+            east_food_in = max(-food_flow, 0.0)
+            east_food_out = max(food_flow, 0.0)
+            east_wealth_in = max(wealth_flow, 0.0)
+            east_wealth_out = max(-wealth_flow, 0.0)
+            east_gold_in = gold_w2e
+            east_gold_out = gold_e2w
+            east_wood_in = wood_w2e
+            east_wood_out = wood_e2w
+            west_food_in = max(food_flow, 0.0)
+            west_food_out = max(-food_flow, 0.0)
+            west_wealth_in = max(-wealth_flow, 0.0)
+            west_wealth_out = max(wealth_flow, 0.0)
+            west_gold_in = gold_e2w
+            west_gold_out = gold_w2e
+            west_wood_in = wood_e2w
+            west_wood_out = wood_w2e
+            east_ratio = _value_ratio_for_side(
+                east_food_in, east_food_out, east_wealth_in, east_wealth_out, east_gold_in, east_gold_out, east_wood_in, east_wood_out
+            )
+            west_ratio = _value_ratio_for_side(
+                west_food_in, west_food_out, west_wealth_in, west_wealth_out, west_gold_in, west_gold_out, west_wood_in, west_wood_out
+            )
+            return east_ratio, west_ratio
+
+        east_ratio_val, west_ratio_val = _value_ratios(proposed_trade)
+        east_required = (model.east.population / 10.0) * config.FOOD_PER_10_POP
+        west_required = (model.west.population / 10.0) * config.FOOD_PER_10_POP
+        east_safety_now = model.east.food / east_required if east_required > 0 else float("inf")
+        west_safety_now = model.west.food / west_required if west_required > 0 else float("inf")
+        trade_value = _proposal_magnitude(proposed_trade)
+        prob, score = _acceptance_probability(
+            east_ratio=east_ratio_val,
+            west_ratio=west_ratio_val,
+            east_safety=east_safety_now,
+            west_safety=west_safety_now,
+            relation_score=float(model.east.relation_score),
+            relation_label=model.east.relation_to_neighbor,
+            east_vec=model.east.personality_vector,
+            west_vec=model.west.personality_vector,
+            trade_value=trade_value,
+        )
+        rng = getattr(model, "random", None)
+        roll = rng.random() if rng is not None else random.random()
+        acceptance_meta = {"probability": prob, "score": score, "roll": roll, "trade_value": trade_value}
+        if roll > prob:
+            session.outcome = "declined"
+            session.accepted_by = None
+            session.current_proposal = {}
+            outcome_reason = "probabilistic_decline"
+
     final_trade = _normalise_trade(session.current_proposal if session.outcome == "accepted" else {}, outcome_reason)
     outcome_label = "accepted" if session.outcome == "accepted" else ("declined" if session.outcome == "declined" else "no_agreement")
     east_line = next((d.get("line", "") for d in reversed(session.dialogue) if d.get("speaker") == "East"), "")
@@ -495,6 +618,7 @@ def run_negotiation(model: Any) -> None:
         "negotiation_outcome": outcome_label,
         "accepted_by": session.accepted_by,
         "turns": session.turn_count,
+        "acceptance": acceptance_meta,
     }
     trade = decision.get("trade") or {}
 
@@ -918,6 +1042,9 @@ def run_negotiation(model: Any) -> None:
         trade_reason = f"Gift blocked: {blocked_receiver} must reciprocate before accepting more aid."
     if intent_failure_reason:
         trade_reason = intent_failure_reason
+    accept_meta = decision.get("acceptance") or {}
+    if decision.get("negotiation_outcome") == "declined" and accept_meta:
+        trade_reason = trade_reason + f" (acceptance roll {accept_meta.get('roll'):.2f} > prob {accept_meta.get('probability'):.2f})"
 
     flows_total = (
         abs(food_flow)

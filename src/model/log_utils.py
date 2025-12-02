@@ -259,6 +259,7 @@ def print_step_summary(
         outcome = entry.get("negotiation_outcome") or entry.get("trade_type")
         turn_count = entry.get("turns")
         accepted_by = entry.get("accepted_by")
+        acceptance_meta = entry.get("acceptance") or {}
         food_e2w = float(trade.get("food_from_east_to_west", 0.0) or 0.0)
         wealth_w2e = float(trade.get("wealth_from_west_to_east", 0.0) or 0.0)
         wood_e2w = float(trade.get("wood_from_east_to_west", 0.0) or 0.0)
@@ -282,6 +283,8 @@ def print_step_summary(
             header = header.rstrip() + f", turns={turn_count}"
         if accepted_by:
             header = header.rstrip() + f", accepted_by={accepted_by}"
+        if acceptance_meta:
+            header = header.rstrip() + f", accept_p={fmt_res(acceptance_meta.get('probability'))}, roll={fmt_res(acceptance_meta.get('roll'))}"
         print(
             f"{header}:\n"
             f"{dialogue_block}\n"

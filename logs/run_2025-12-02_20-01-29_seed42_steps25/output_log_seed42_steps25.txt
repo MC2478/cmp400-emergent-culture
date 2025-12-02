@@ -2,30 +2,30 @@ Step 1:
   World: season=spring (food/wood yield x1.00), next=spring
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps before chasing prosperity, and wait for wood buffer to allow infrastructure upgrade.
-    - Work allocation: focus_food:0.50, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.05, focus_gold:0.00
+      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+    - Work allocation: focus_food:0.50, focus_wood:0.20, focus_wealth:0.30, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 4)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 100 -> 100
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Cover food/wages for the next 3 steps before chasing prosperity, and gather resources to build infrastructure when buffers allow.
     - Work allocation: focus_food:0.50, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 4)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 100 -> 100
 
   Resources (before -> after)
-  West| food 2.07->2.36 | wealth 4.50->4.63 | wood 1.30->1.52 | iron 1.34->1.39 | gold 0.42->0.42 | infra 0->0 | pop 100->100
+  West| food 2.07->2.36 | wealth 4.50->4.89 | wood 1.30->1.52 | iron 1.34->1.34 | gold 0.42->0.42 | infra 0->0 | pop 100->100
   East| food 2.07->2.53 | wealth 4.55->4.56 | wood 1.01->1.12 | iron 1.02->1.02 | gold 0.09->0.09 | infra 0->0 | pop 100->100
 
   Wages:
-  West| wealth 4.63->4.58 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 4.89->4.84 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.56->4.51 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 2.36->1.86 | wealth 4.58->4.58 | wood 1.52->1.52 | iron 1.39->1.39 | gold 0.42->0.42 | infra 0->0 | pop 100->110 | req_food 0.50
+  West| food 2.36->1.86 | wealth 4.84->4.84 | wood 1.52->1.52 | iron 1.34->1.34 | gold 0.42->0.42 | infra 0->0 | pop 100->110 | req_food 0.50
   East| food 2.53->2.03 | wealth 4.51->4.51 | wood 1.12->1.12 | iron 1.02->1.02 | gold 0.09->0.09 | infra 0->0 | pop 100->110 | req_food 0.50
 
 ------------------------------------------------------------
@@ -34,7 +34,7 @@ Step 2:
   World: season=spring (food/wood yield x1.00), next=summer
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Wood buffer is not yet sufficient to upgrade infrastructure, and food safety ratio remains within acceptable limits.
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
     - Work allocation: focus_food:0.55, focus_wood:0.20, focus_wealth:0.25, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 3)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
@@ -42,22 +42,22 @@ Step 2:
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Cover food/wages for the next 3 steps and gather resources to build infrastructure when buffers allow.
     - Work allocation: focus_food:0.55, focus_wood:0.20, focus_wealth:0.15, focus_iron:0.05, focus_gold:0.05
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 3)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 110 -> 110
 
   Resources (before -> after)
-  West| food 1.86->2.21 | wealth 4.58->4.94 | wood 1.52->1.77 | iron 1.39->1.39 | gold 0.42->0.42 | infra 0->0 | pop 110->110
+  West| food 1.86->2.21 | wealth 4.84->5.21 | wood 1.52->1.77 | iron 1.34->1.34 | gold 0.42->0.42 | infra 0->0 | pop 110->110
   East| food 2.03->2.59 | wealth 4.51->4.54 | wood 1.12->1.23 | iron 1.02->1.04 | gold 0.09->0.13 | infra 0->0 | pop 110->110
 
   Wages:
-  West| wealth 4.94->4.89 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 5.21->5.15 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.54->4.49 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 2.21->1.66 | wealth 4.89->4.89 | wood 1.77->1.77 | iron 1.39->1.39 | gold 0.42->0.42 | infra 0->0 | pop 110->121 | req_food 0.55
+  West| food 2.21->1.66 | wealth 5.15->5.15 | wood 1.77->1.77 | iron 1.34->1.34 | gold 0.42->0.42 | infra 0->0 | pop 110->121 | req_food 0.55
   East| food 2.59->2.04 | wealth 4.49->4.49 | wood 1.23->1.23 | iron 1.04->1.04 | gold 0.13->0.13 | infra 0->0 | pop 110->121 | req_food 0.55
 
 ------------------------------------------------------------
@@ -66,30 +66,31 @@ Step 3:
   World: season=summer (food/wood yield x1.20), next=summer
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Wood buffer is not yet sufficient to upgrade infrastructure, and food safety ratio remains within acceptable limits.
-    - Work allocation: focus_food:0.60, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.05, focus_gold:0.05
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
+    - Work allocation: focus_food:0.60, focus_wood:0.20, focus_wealth:0.18, focus_iron:0.01, focus_gold:0.00
+    - Infrastructure attempt: failed
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 2)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 121 -> 121
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Cover food/wages for the next 3 steps and gather resources to build infrastructure when buffers allow.
     - Work allocation: focus_food:0.60, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.05, focus_gold:0.05
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 2)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 121 -> 121
 
   Resources (before -> after)
-  West| food 1.66->2.17 | wealth 4.89->5.05 | wood 1.77->2.10 | iron 1.39->1.46 | gold 0.42->0.44 | infra 0->0 | pop 121->121
+  West| food 1.66->2.17 | wealth 5.15->5.44 | wood 1.77->2.10 | iron 1.34->1.35 | gold 0.42->0.42 | infra 0->0 | pop 121->121
   East| food 2.04->2.84 | wealth 4.49->4.51 | wood 1.23->1.39 | iron 1.04->1.06 | gold 0.13->0.17 | infra 0->0 | pop 121->121
 
   Wages:
-  West| wealth 5.05->4.99 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 5.44->5.38 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.51->4.45 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 2.17->1.56 | wealth 4.99->4.99 | wood 2.10->2.10 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 121->133 | req_food 0.60
+  West| food 2.17->1.56 | wealth 5.38->5.38 | wood 2.10->2.10 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 121->133 | req_food 0.60
   East| food 2.84->2.23 | wealth 4.45->4.45 | wood 1.39->1.39 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 121->133 | req_food 0.60
 
 ------------------------------------------------------------
@@ -98,30 +99,30 @@ Step 4:
   World: season=summer (food/wood yield x1.20), next=autumn
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Wood buffer is not yet sufficient to upgrade infrastructure, and food safety ratio remains within acceptable limits.
-    - Work allocation: focus_food:0.67, focus_wood:0.00, focus_wealth:0.33, focus_iron:0.00, focus_gold:0.00
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
+    - Work allocation: focus_food:0.50, focus_wood:0.30, focus_wealth:0.20, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 1)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 133 -> 133
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Cover food/wages for the next 3 steps and gather resources to build infrastructure when buffers allow.
     - Work allocation: focus_food:0.67, focus_wood:0.00, focus_wealth:0.33, focus_iron:0.00, focus_gold:0.00
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 1)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 133 -> 133
 
   Resources (before -> after)
-  West| food 1.56->2.19 | wealth 4.99->5.57 | wood 2.10->2.10 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 133->133
+  West| food 1.56->2.03 | wealth 5.38->5.73 | wood 2.10->2.63 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 133->133
   East| food 2.23->3.21 | wealth 4.45->4.53 | wood 1.39->1.39 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 133->133
 
   Wages:
-  West| wealth 5.57->5.50 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 5.73->5.66 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.53->4.46 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 2.19->1.52 | wealth 5.50->5.50 | wood 2.10->2.10 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 133->146 | req_food 0.67
+  West| food 2.03->1.36 | wealth 5.66->5.66 | wood 2.63->2.63 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 133->146 | req_food 0.67
   East| food 3.21->2.55 | wealth 4.46->4.46 | wood 1.39->1.39 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 133->146 | req_food 0.67
 
 ------------------------------------------------------------
@@ -130,30 +131,30 @@ Step 5:
   World: season=autumn (food/wood yield x0.80), next=autumn
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Wood buffer is not yet sufficient to upgrade infrastructure, and food safety ratio remains within acceptable limits.
-    - Work allocation: focus_food:0.73, focus_wood:0.00, focus_wealth:0.27, focus_iron:0.00, focus_gold:0.00
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
+    - Work allocation: focus_food:0.70, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 146 -> 146
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Cover food/wages for the next 3 steps and gather resources to build infrastructure when buffers allow.
     - Work allocation: focus_food:0.70, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 146 -> 146
 
   Resources (before -> after)
-  West| food 1.52->2.02 | wealth 5.50->6.02 | wood 2.10->2.10 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 146->146
+  West| food 1.36->1.84 | wealth 5.66->5.86 | wood 2.63->2.90 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 146->146
   East| food 2.55->3.30 | wealth 4.46->4.49 | wood 1.39->1.51 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 146->146
 
   Wages:
-  West| wealth 6.02->5.95 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 5.86->5.78 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.49->4.42 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 2.02->1.29 | wealth 5.95->5.95 | wood 2.10->2.10 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 146->161 | req_food 0.73
+  West| food 1.84->1.11 | wealth 5.78->5.78 | wood 2.90->2.90 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 146->161 | req_food 0.73
   East| food 3.30->2.57 | wealth 4.42->4.42 | wood 1.51->1.51 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 146->161 | req_food 0.73
 
 ------------------------------------------------------------
@@ -162,7 +163,7 @@ Step 6:
   World: season=autumn (food/wood yield x0.80), next=winter
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Wood buffer is sufficient to upgrade infrastructure and food safety ratio remains within acceptable limits.
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
     - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
     - Infrastructure attempt: failed
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
@@ -171,22 +172,22 @@ Step 6:
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Food safety ratio is sufficient for the next steps and wood tier infrastructure can be built once ready.
     - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 161 -> 161
 
   Resources (before -> after)
-  West| food 1.29->1.89 | wealth 5.95->6.27 | wood 2.10->2.17 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 161->161
+  West| food 1.11->1.71 | wealth 5.78->6.10 | wood 2.90->2.97 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 161->161
   East| food 2.57->3.51 | wealth 4.42->4.46 | wood 1.51->1.54 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 161->161
 
   Wages:
-  West| wealth 6.27->6.19 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 6.10->6.02 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.46->4.38 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.89->1.08 | wealth 6.19->6.19 | wood 2.17->2.17 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 161->177 | req_food 0.81
+  West| food 1.71->0.90 | wealth 6.02->6.02 | wood 2.97->2.97 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 161->177 | req_food 0.81
   East| food 3.51->2.71 | wealth 4.38->4.38 | wood 1.54->1.54 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 161->177 | req_food 0.81
 
 ------------------------------------------------------------
@@ -195,7 +196,7 @@ Step 7:
   World: season=winter (food/wood yield x0.40), next=winter
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Wood buffer is sufficient to upgrade infrastructure and food safety ratio remains within acceptable limits.
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
     - Work allocation: focus_food:0.70, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
     - Infrastructure attempt: failed
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
@@ -204,22 +205,22 @@ Step 7:
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food/wages for the next 3 steps and gather resources before investing in infrastructure.
+      Food safety ratio is sufficient for the next steps and wood tier infrastructure can be built once ready.
     - Work allocation: focus_food:0.70, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 177 -> 177
 
   Resources (before -> after)
-  West| food 1.08->1.37 | wealth 6.19->6.42 | wood 2.17->2.33 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 177->177
+  West| food 0.90->1.19 | wealth 6.02->6.26 | wood 2.97->3.13 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 177->177
   East| food 2.71->3.16 | wealth 4.38->4.41 | wood 1.54->1.62 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 177->177
 
   Wages:
-  West| wealth 6.42->6.33 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 6.26->6.17 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.41->4.32 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.37->0.49 | wealth 6.33->6.33 | wood 2.33->2.33 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 177->195 | req_food 0.89
+  West| food 1.19->0.31 | wealth 6.17->6.17 | wood 3.13->3.13 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 177->195 | req_food 0.89
   East| food 3.16->2.28 | wealth 4.32->4.32 | wood 1.62->1.62 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 177->195 | req_food 0.89
 
 ------------------------------------------------------------
@@ -228,31 +229,31 @@ Step 8:
   World: season=winter (food/wood yield x0.40), next=spring
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Food safety ratio is low and the food shortfall is critical; allocating most resources to food will help cover wages for the next 3 steps.
-    - Work allocation: focus_food:0.97, focus_wood:0.01, focus_wealth:0.02, focus_iron:0.00, focus_gold:0.00
-    - Infrastructure attempt: failed
+      Prioritize food allocation to cover the immediate shortfall and then focus on wealth to maintain a buffer before investing in infrastructure.
+    - Work allocation: focus_food:0.97, focus_wood:0.00, focus_wealth:0.03, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=1, failed_strategy=0
     - Population: 195 -> 195
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food shortfall and maintain resource buffers before investing in infrastructure.
+      Food safety ratio is sufficient for the next steps and wood tier infrastructure can be built once ready.
     - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
+    - Infrastructure attempt: failed
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 195 -> 195
 
   Resources (before -> after)
-  West| food 0.49->0.93 | wealth 6.33->6.38 | wood 2.33->2.34 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 195->195
+  West| food 0.31->0.75 | wealth 6.17->6.24 | wood 3.13->3.13 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 195->195
   East| food 2.28->2.85 | wealth 4.32->4.38 | wood 1.62->1.64 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 195->195
 
   Wages:
-  West| wealth 6.38->6.29 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 6.24->6.15 | mult 1.00->1.00 | strike False | unpaid 0.00
   East| wealth 4.38->4.28 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 0.93->0.00 | wealth 6.29->6.29 | wood 2.34->2.34 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 195->194 | req_food 0.97
+  West| food 0.75->0.00 | wealth 6.15->6.15 | wood 3.13->3.13 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 195->193 | req_food 0.97
   East| food 2.85->1.88 | wealth 4.28->4.28 | wood 1.64->1.64 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 195->214 | req_food 0.97
 
 ------------------------------------------------------------
@@ -261,31 +262,32 @@ Step 9:
   World: season=spring (food/wood yield x1.00), next=spring
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      Food safety ratio is critically low and the food shortfall is severe; allocating most resources to food will help cover wages for the next 3 steps.
-    - Work allocation: focus_food:0.97, focus_wood:0.01, focus_wealth:0.02, focus_iron:0.00, focus_gold:0.00
+      Prioritize food allocation to cover the immediate shortfall and then focus on wealth to maintain a buffer before investing in infrastructure.
+    - Work allocation: focus_food:0.96, focus_wood:0.00, focus_wealth:0.04, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
-    - Population: 194 -> 194
+    - Population: 193 -> 193
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food shortfall and maintain resource buffers before investing in infrastructure.
-    - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
+      Cover food/wages for the next 3 steps and gather resources to build wood tier infrastructure once ready.
+    - Work allocation: focus_food:0.70, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
+    - Infrastructure attempt: failed
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 214 -> 214
 
   Resources (before -> after)
-  West| food 0.00->1.10 | wealth 6.29->6.34 | wood 2.34->2.36 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 194->194
-  East| food 1.88->3.45 | wealth 4.28->4.34 | wood 1.64->1.70 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 214->214
+  West| food 0.00->1.08 | wealth 6.15->6.25 | wood 3.13->3.13 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 193->193
+  East| food 1.88->3.25 | wealth 4.28->4.32 | wood 1.64->1.87 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 214->214
 
   Wages:
-  West| wealth 6.34->6.24 | mult 1.00->1.00 | strike False | unpaid 0.00
-  East| wealth 4.34->4.23 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 6.25->6.15 | mult 1.00->1.00 | strike False | unpaid 0.00
+  East| wealth 4.32->4.21 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.10->0.13 | wealth 6.24->6.24 | wood 2.36->2.36 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 194->214 | req_food 0.97
-  East| food 3.45->2.38 | wealth 4.23->4.23 | wood 1.70->1.70 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 214->236 | req_food 1.07
+  West| food 1.08->0.11 | wealth 6.15->6.15 | wood 3.13->3.13 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 193->212 | req_food 0.96
+  East| food 3.25->2.18 | wealth 4.21->4.21 | wood 1.87->1.87 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 214->236 | req_food 1.07
 
 ------------------------------------------------------------
 
@@ -293,31 +295,33 @@ Step 10:
   World: season=spring (food/wood yield x1.00), next=summer
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      The food safety ratio is critically low and the food shortfall is severe; allocating most resources to food will help cover wages for the next 3 steps.
-    - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
+      Prioritize food allocation to cover the immediate shortfall and then focus on wealth to maintain a buffer before investing in infrastructure.
+    - Work allocation: focus_food:0.90, focus_wood:0.05, focus_wealth:0.05, focus_iron:0.00, focus_gold:0.00
+    - Infrastructure attempt: failed
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
-    - Population: 214 -> 214
+    - Population: 212 -> 212
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food shortfall and maintain resource buffers before investing in infrastructure.
+      Cover food/wages for the next 3 steps and gather resources to build wood tier infrastructure once ready.
     - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
+    - Infrastructure attempt: failed
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 236 -> 236
 
   Resources (before -> after)
-  West| food 0.13->1.12 | wealth 6.24->6.66 | wood 2.36->2.48 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 214->214
-  East| food 2.38->4.11 | wealth 4.23->4.29 | wood 1.70->1.76 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 236->236
+  West| food 0.11->1.23 | wealth 6.15->6.29 | wood 3.13->3.25 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 212->212
+  East| food 2.18->3.91 | wealth 4.21->4.27 | wood 1.87->1.93 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 236->236
 
   Wages:
-  West| wealth 6.66->6.56 | mult 1.00->1.00 | strike False | unpaid 0.00
-  East| wealth 4.29->4.17 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 6.29->6.19 | mult 1.00->1.00 | strike False | unpaid 0.00
+  East| wealth 4.27->4.15 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.12->0.05 | wealth 6.56->6.56 | wood 2.48->2.48 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 214->235 | req_food 1.07
-  East| food 4.11->2.93 | wealth 4.17->4.17 | wood 1.76->1.76 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 236->259 | req_food 1.18
+  West| food 1.23->0.17 | wealth 6.19->6.19 | wood 3.25->3.25 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 212->233 | req_food 1.06
+  East| food 3.91->2.73 | wealth 4.15->4.15 | wood 1.93->1.93 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 236->259 | req_food 1.18
 
 ------------------------------------------------------------
 
@@ -325,16 +329,15 @@ Step 11:
   World: season=summer (food/wood yield x1.20), next=summer
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      The food safety ratio is critically low and the food shortfall is severe; allocating most resources to food will help cover wages for the next 3 steps, while also allowing infrastructure upgrade.
-    - Work allocation: focus_food:0.90, focus_wood:0.05, focus_wealth:0.05, focus_iron:0.00, focus_gold:0.00
-    - Infrastructure attempt: failed
+      Prioritize food allocation to cover the immediate shortfall and then focus on wealth to maintain a buffer before investing in infrastructure.
+    - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
-    - Population: 235 -> 235
+    - Population: 233 -> 233
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food shortfall and maintain resource buffers before investing in infrastructure; wood tier is now ready.
+      Cover food/wages for the next 3 steps and gather resources to build wood tier infrastructure once ready.
     - Work allocation: focus_food:0.70, focus_wood:0.20, focus_wealth:0.10, focus_iron:0.00, focus_gold:0.00
     - Infrastructure attempt: failed
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
@@ -342,16 +345,16 @@ Step 11:
     - Population: 259 -> 259
 
   Resources (before -> after)
-  West| food 0.05->1.53 | wealth 6.56->6.71 | wood 2.48->2.64 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 235->235
-  East| food 2.93->4.93 | wealth 4.17->4.22 | wood 1.76->2.09 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 259->259
+  West| food 0.17->1.47 | wealth 6.19->6.65 | wood 3.25->3.40 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 233->233
+  East| food 2.73->4.73 | wealth 4.15->4.20 | wood 1.93->2.26 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 259->259
 
   Wages:
-  West| wealth 6.71->6.59 | mult 1.00->1.00 | strike False | unpaid 0.00
-  East| wealth 4.22->4.09 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 6.65->6.53 | mult 1.00->1.00 | strike False | unpaid 0.00
+  East| wealth 4.20->4.07 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.53->0.36 | wealth 6.59->6.59 | wood 2.64->2.64 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 235->259 | req_food 1.18
-  East| food 4.93->3.63 | wealth 4.09->4.09 | wood 2.09->2.09 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 259->285 | req_food 1.30
+  West| food 1.47->0.30 | wealth 6.53->6.53 | wood 3.40->3.40 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 233->256 | req_food 1.17
+  East| food 4.73->3.43 | wealth 4.07->4.07 | wood 2.26->2.26 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 259->285 | req_food 1.30
 
 ------------------------------------------------------------
 
@@ -359,33 +362,33 @@ Step 12:
   World: season=summer (food/wood yield x1.20), next=autumn
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      The food safety ratio is critically low and the food shortfall is severe; allocating most resources to food will help cover wages for the next 3 steps.
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
     - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
     - Infrastructure attempt: failed
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
-    - Population: 259 -> 259
+    - Population: 256 -> 256
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Cover food shortfall and maintain resource buffers before investing in infrastructure; wood tier is now ready.
-    - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
+      Food safety ratio is sufficient for the next steps and wood tier infrastructure can be built once ready.
+    - Work allocation: focus_food:0.80, focus_wood:0.15, focus_wealth:0.05, focus_iron:0.00, focus_gold:0.00
     - Infrastructure attempt: failed
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 285 -> 285
 
   Resources (before -> after)
-  West| food 0.36->1.81 | wealth 6.59->7.11 | wood 2.64->2.81 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 259->259
-  East| food 3.63->6.14 | wealth 4.09->4.17 | wood 2.09->2.18 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 285->285
+  West| food 0.30->1.74 | wealth 6.53->7.04 | wood 3.40->3.58 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 256->256
+  East| food 3.43->5.95 | wealth 4.07->4.10 | wood 2.26->2.53 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 285->285
 
   Wages:
-  West| wealth 7.11->6.98 | mult 1.00->1.00 | strike False | unpaid 0.00
-  East| wealth 4.17->4.03 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 7.04->6.91 | mult 1.00->1.00 | strike False | unpaid 0.00
+  East| wealth 4.10->3.95 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.81->0.51 | wealth 6.98->6.98 | wood 2.81->2.81 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 259->285 | req_food 1.29
-  East| food 6.14->4.72 | wealth 4.03->4.03 | wood 2.18->2.18 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 285->314 | req_food 1.43
+  West| food 1.74->0.46 | wealth 6.91->6.91 | wood 3.58->3.58 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 256->282 | req_food 1.28
+  East| food 5.95->4.52 | wealth 3.95->3.95 | wood 2.53->2.53 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 285->314 | req_food 1.43
 
 ------------------------------------------------------------
 
@@ -393,28 +396,29 @@ Step 13:
   World: season=autumn (food/wood yield x0.80), next=autumn
   West: action=mixed_allocation (LLM: yes)
     - Reason:
-      The food safety ratio is critically low and the food shortfall is severe; allocating most resources to food will help cover wages for the next 3 steps.
+      Buffers are sufficient to cover food/wages for the next 3 steps and invest in wood tier infrastructure once ready.
     - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
+    - Infrastructure attempt: failed
     - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
-    - Population: 285 -> 285
+    - Population: 282 -> 282
 
   East: action=mixed_allocation (LLM: yes)
     - Reason:
-      Food safety ratio is high enough to allow for some resource gathering and infrastructure investment.
-    - Work allocation: focus_food:0.50, focus_wood:0.30, focus_wealth:0.20, focus_iron:0.00, focus_gold:0.00
+      Food safety ratio is sufficient for the next steps and wood tier infrastructure can be built once ready.
+    - Work allocation: focus_food:0.80, focus_wood:0.05, focus_wealth:0.15, focus_iron:0.00, focus_gold:0.00
     - Infrastructure attempt: failed
     - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 0)
       Pressures: exploitation=0, starvation=0, failed_strategy=0
     - Population: 314 -> 314
 
   Resources (before -> after)
-  West| food 0.51->1.57 | wealth 6.98->7.54 | wood 2.81->2.94 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 285->285
-  East| food 4.72->5.87 | wealth 4.03->4.14 | wood 2.18->2.57 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 314->314
+  West| food 0.46->1.51 | wealth 6.91->7.47 | wood 3.58->3.70 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 282->282
+  East| food 4.52->6.36 | wealth 3.95->4.04 | wood 2.53->2.59 | iron 1.06->1.06 | gold 0.17->0.17 | infra 0->0 | pop 314->314
 
   Wages:
-  West| wealth 7.54->7.40 | mult 1.00->1.00 | strike False | unpaid 0.00
-  East| wealth 4.14->3.98 | mult 1.00->1.00 | strike False | unpaid 0.00
+  West| wealth 7.47->7.33 | mult 1.00->1.00 | strike False | unpaid 0.00
+  East| wealth 4.04->3.88 | mult 1.00->1.00 | strike False | unpaid 0.00
 
   Upkeep:
-  West| food 1.57->0.15 | wealth 7.40->7.40 | wood 2.94->2.94 | iron 1.46->1.46 | gold 0.44->0.44 | infra 0->0 | pop 285->313 | req_food 1.42
+  West| food 1.51->0.10 | wealth 7.33->7.33 | wood 3.70->3.70 | iron 1.35->1.35 | gold 0.42->0.42 | infra 0->0 | pop 282->310 | req_food 1.41
