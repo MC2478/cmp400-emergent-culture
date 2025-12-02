@@ -67,8 +67,8 @@ class LLMConfig:
     base_url: str = "http://127.0.0.1:1234/v1/chat/completions"
     model: str = "meta-llama-3.1-8b-instruct"
     temperature: float = 0.1
-    max_tokens: int = 2500
-    timeout: int = 30
+    max_tokens: int = 800
+    timeout: int = 6
 
 
 class LLMDecisionClient:
@@ -77,9 +77,23 @@ class LLMDecisionClient:
     def __init__(self, config: LLMConfig | None = None, enabled: bool = False) -> None:
         self.config = config or LLMConfig()
         self.enabled = enabled
+        self._network_available = True
+        self._disable_reason: str | None = None
+
+    def _disable_network_access(self, reason: str) -> None:
+        """Flip the client into offline mode so future calls fall back instantly."""
+        if not self._network_available:
+            return
+        self._network_available = False
+        self._disable_reason = reason
+        print(
+            f"[LLM disabled] {reason}. Falling back to heuristic policy until you toggle LLM decisions off/on again."
+        )
 
     def _negotiate_request(self, prompt: str, max_tokens: int) -> Dict[str, Any] | None:
         """Little sidekick: send a negotiation prompt and hand back parsed JSON."""
+        if not self._network_available:
+            return None
         try:
             response = requests.post(
                 self.config.base_url,
@@ -97,10 +111,10 @@ class LLMDecisionClient:
             response.raise_for_status()
             raw = response.json()["choices"][0]["message"]["content"].strip()
         except requests.RequestException as exc:
-            log.warning("LLM negotiation request failed (%s).", exc)
+            self._disable_network_access(f"LLM negotiation request failed ({exc})")
             return None
         except Exception as exc:  # pragma: no cover - defensive
-            log.warning("LLM negotiation response parsing failed (%s).", exc)
+            self._disable_network_access(f"LLM negotiation response parsing failed ({exc})")
             return None
         return parse_json_response(raw)
 
@@ -267,6 +281,8 @@ Trade rules:
             raise RuntimeError("LLMDecisionClient is disabled.")
 
         def _request(extra_prompt: str | None = None) -> str | None:
+            if not self._network_available:
+                return None
             prompt = compose_prompt(state)
             if extra_prompt:
                 prompt = f"{prompt}\n\nPrevious reply was invalid. {extra_prompt.strip()}"
@@ -288,10 +304,10 @@ Trade rules:
                 data = response.json()
                 return data["choices"][0]["message"]["content"].strip()
             except requests.RequestException as exc:
-                log.warning("LLM decision request failed (%s); using fallback policy.", exc)
+                self._disable_network_access(f"LLM decision request failed ({exc})")
                 return None
             except Exception as exc:  # pragma: no cover - defensive
-                log.warning("LLM decision parsing failed (%s); using fallback policy.", exc)
+                self._disable_network_access(f"LLM decision parsing failed ({exc})")
                 return None
 
         text = _request()

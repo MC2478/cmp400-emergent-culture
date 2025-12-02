@@ -228,6 +228,8 @@ class LeaderAgent(mesa.Agent):
         priority = self._priority_hint()
         ratio = priority.get("food_safety_ratio", 0.0)
         required = self._required_food()
+        horizon_need = required * FOOD_SAFETY_HORIZON_STEPS
+        shortfall_horizon = max(0.0, horizon_need - territory.food)
         reason = ""
         request_resource = None
         request_amount = 0.0
@@ -235,16 +237,18 @@ class LeaderAgent(mesa.Agent):
         offer_amount = 0.0
         urgency = "low"
 
-        if ratio < 0.9:
-            shortfall = max(0.0, required - territory.food)
-            if shortfall > 0.2:
+        if ratio < 1.05:
+            # Use horizon shortfall so shallow buffers still trigger a request.
+            if shortfall_horizon > 0.2 * required:
                 request_resource = "food"
-                request_amount = round(min(shortfall + 0.2, required), 2)
+                # Spread the horizon gap over the next few steps to avoid giant asks.
+                per_step_gap = shortfall_horizon / FOOD_SAFETY_HORIZON_STEPS
+                request_amount = round(min(per_step_gap + 0.2, max(required, per_step_gap * 2)), 2)
                 offer_resource = "wealth" if territory.wealth > 0.3 else None
                 if offer_resource:
                     offer_amount = round(min(territory.wealth * 0.4, max(0.1, request_amount * 0.6)), 2)
-                reason = "Food safety well below 1.0; requesting aid."
-                urgency = "critical_food"
+                reason = f"Food safety ratio {ratio:.2f} over {FOOD_SAFETY_HORIZON_STEPS} steps; requesting aid."
+                urgency = "critical_food" if ratio < 0.9 else "low_food"
 
         wood_cost = INFRA_TIER_WOOD_WOOD_COST
         wealth_cost = INFRA_TIER_WOOD_WEALTH_COST

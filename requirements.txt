@@ -1,5 +1,9 @@
 ﻿# I depend on mesa for agent-based modeling and requests for LLM HTTP calls.
 mesa>=3.0.0
+networkx
+matplotlib
+altair>=5,<6
+solara
 numpy
 pandas
 pyyaml

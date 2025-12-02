@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, TextIO
 
 import mesa
+from mesa.datacollection import DataCollector
 
 import config
 from src.agents.leader import LeaderAgent, TerritoryState
@@ -21,8 +22,19 @@ from src.model.traits import adaptation_pressure_text, add_trait_to_state, sampl
 class WorldModel(mesa.Model):
     """Model card: track two territories, plug in leaders, and collect decisions/negotiations."""
 
-    def __init__(self, random_seed: int | None = None, initial_food: float | None = None, use_llm: bool = False) -> None:
-        """Init cue: accept seed/food override/LLM toggle so runs stay reproducible."""
+    def __init__(
+        self,
+        random_seed: int | None = None,
+        initial_wealth: float | None = None,
+        initial_food: float | None = None,
+        initial_wood: float | None = None,
+        initial_iron: float | None = None,
+        initial_gold: float | None = None,
+        population_E: float | None = None,
+        population_W: float | None = None,
+        use_llm: bool = False,
+    ) -> None:
+        """Init cue: accept seed/resource overrides so runs stay reproducible and tweakable."""
         super().__init__(seed=random_seed)
         self.chronicle: List[Dict[str, Any]] = []
         self.environment: EnvironmentSnapshot = generate_environment(self.random)
@@ -32,19 +44,27 @@ class WorldModel(mesa.Model):
         west_env = self.environment.west
         starting_food_east = float(initial_food) if initial_food is not None else east_env.starting_food
         starting_food_west = float(initial_food) if initial_food is not None else west_env.starting_food
-        starting_wealth_east = east_env.starting_wealth
-        starting_wealth_west = west_env.starting_wealth
+        starting_wealth_east = float(initial_wealth) if initial_wealth is not None else east_env.starting_wealth
+        starting_wealth_west = float(initial_wealth) if initial_wealth is not None else west_env.starting_wealth
+        starting_wood_east = float(initial_wood) if initial_wood is not None else east_env.starting_wood
+        starting_wood_west = float(initial_wood) if initial_wood is not None else west_env.starting_wood
+        starting_iron_east = float(initial_iron) if initial_iron is not None else east_env.starting_iron
+        starting_iron_west = float(initial_iron) if initial_iron is not None else west_env.starting_iron
+        starting_gold_east = float(initial_gold) if initial_gold is not None else east_env.starting_gold
+        starting_gold_west = float(initial_gold) if initial_gold is not None else west_env.starting_gold
+        population_east = float(population_E) if population_E is not None else float(config.STARTING_POPULATION)
+        population_west = float(population_W) if population_W is not None else float(config.STARTING_POPULATION)
         self.east = TerritoryState(
             name="East",
             food=starting_food_east,
             wealth=starting_wealth_east,
-            iron=east_env.starting_iron,
-            gold=east_env.starting_gold,
+            iron=starting_iron_east,
+            gold=starting_gold_east,
             relation_to_neighbor="neutral",
-            population=config.STARTING_POPULATION,
+            population=population_east,
             food_yield=east_env.food_yield,
             wealth_yield=east_env.wealth_yield,
-            wood=east_env.starting_wood,
+            wood=starting_wood_east,
             wood_yield=east_env.wood_yield,
             iron_yield=east_env.iron_yield,
             gold_yield=east_env.gold_yield,
@@ -54,13 +74,13 @@ class WorldModel(mesa.Model):
             name="West",
             food=starting_food_west,
             wealth=starting_wealth_west,
-            iron=west_env.starting_iron,
-            gold=west_env.starting_gold,
+            iron=starting_iron_west,
+            gold=starting_gold_west,
             relation_to_neighbor="neutral",
-            population=config.STARTING_POPULATION,
+            population=population_west,
             food_yield=west_env.food_yield,
             wealth_yield=west_env.wealth_yield,
-            wood=west_env.starting_wood,
+            wood=starting_wood_west,
             wood_yield=west_env.wood_yield,
             iron_yield=west_env.iron_yield,
             gold_yield=west_env.gold_yield,
@@ -92,6 +112,15 @@ class WorldModel(mesa.Model):
         self.agent_state_logs: Dict[str, TextIO] = {}
         self.agents.add(self.leader_east)
         self.agents.add(self.leader_west)
+        self.datacollector = DataCollector(
+            model_reporters={
+                "wealth_E": lambda m: m.east.wealth,
+                "wealth_W": lambda m: m.west.wealth,
+                "food_E": lambda m: m.east.food,
+                "food_W": lambda m: m.west.food,
+            }
+        )
+        self.datacollector.collect(self)
 
     def _season_for_step(self, step_number: int) -> str:
         if not self.seasons:
@@ -530,6 +559,7 @@ class WorldModel(mesa.Model):
         )
         self._refresh_trait_state_for_logging()
         print_step_summary(self.steps, self.current_step_log, self.chronicle, self.season_multipliers)
+        self.datacollector.collect(self)
 
     def all_territories_dead(self) -> bool:
         """End check: report whether both territories have collapsed."""

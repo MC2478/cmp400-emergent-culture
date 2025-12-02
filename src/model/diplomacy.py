@@ -237,12 +237,60 @@ def run_negotiation(model: Any) -> None:
     """Negotiation card: orchestrate the LM Studio chat and apply the resulting flows."""
     # Presentation cue: this is the stand-in for the future council mechanics.
     llm_client = getattr(model, "llm_client", None)
-    if llm_client is None or not llm_client.enabled:
-        return
+    llm_available = llm_client is not None and getattr(llm_client, "enabled", False)
 
     east_intent = getattr(model.leader_east, "negotiation_intent", {}) or {"initiate": False}
     west_intent = getattr(model.leader_west, "negotiation_intent", {}) or {"initiate": False}
+    # Safety net: if neither leader initiated but food horizon is low, auto-trigger a request.
+    east_pressures = _resource_pressures_for_side(model.east)
+    west_pressures = _resource_pressures_for_side(model.west)
     if not (east_intent.get("initiate") or west_intent.get("initiate")):
+        east_ratio = east_pressures.get("food_ratio_horizon", float("inf"))
+        west_ratio = west_pressures.get("food_ratio_horizon", float("inf"))
+        if east_ratio < 1.0 or west_ratio < 1.0:
+            side = "East" if east_ratio <= west_ratio else "West"
+            territory = model.east if side == "East" else model.west
+            required = (territory.population / 10.0) * config.FOOD_PER_10_POP
+            horizon_need = required * config.FOOD_SAFETY_HORIZON_STEPS
+            shortfall = max(0.0, horizon_need - territory.food)
+            per_step_gap = shortfall / max(1.0, config.FOOD_SAFETY_HORIZON_STEPS)
+            request_amt = round(min(per_step_gap + 0.2, max(required, per_step_gap * 2)), 2)
+            offer_res = "wealth" if territory.wealth > 0.3 else None
+            offer_amt = round(min(territory.wealth * 0.4, max(0.1, request_amt * 0.6)), 2) if offer_res else 0.0
+            intent = {
+                "initiate": True,
+                "request_resource": "food",
+                "request_amount": request_amt,
+                "offer_resource": offer_res,
+                "offer_amount": offer_amt,
+                "reason": f"Auto-trigger: food horizon ratio {east_ratio if side=='East' else west_ratio:.2f} < 1.0.",
+                "urgency": "critical_food",
+                "debug_auto": True,
+            }
+            if side == "East":
+                east_intent = intent
+            else:
+                west_intent = intent
+    model.leader_east.negotiation_intent = east_intent
+    model.leader_west.negotiation_intent = west_intent
+    if not llm_available:
+        entry = {
+            "event_type": "negotiation",
+            "step": model.steps,
+            "dialogue": [],
+            "trade": {"reason": "LLM client unavailable; negotiation skipped."},
+            "negotiation_outcome": "no_llm",
+            "east_intent": east_intent,
+            "west_intent": west_intent,
+        }
+        model.chronicle.append(entry)
+        model.current_step_log["negotiation"] = {
+            "entry": entry,
+            "east_before": {},
+            "east_after": {},
+            "west_before": {},
+            "west_after": {},
+        }
         return
     if east_intent.get("initiate") and west_intent.get("initiate"):
         dialogue_initiator = "East"
