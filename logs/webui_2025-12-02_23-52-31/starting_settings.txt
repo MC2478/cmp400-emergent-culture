@@ -1,0 +1,9 @@
+initial_wealth: 5.0
+initial_food: 3.0
+initial_wood: 0.0
+initial_iron: 1.0
+initial_gold: 0.5
+population_E: 100
+population_W: 100
+use_llm: True
+seed: 42

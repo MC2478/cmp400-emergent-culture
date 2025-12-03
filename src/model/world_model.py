@@ -138,6 +138,22 @@ class WorldModel(mesa.Model):
         """Season cue: show the upcoming season so prompts can plan ahead."""
         return self._season_for_step(self.steps + 1)
 
+    def _ensure_diplomacy_client(self) -> None:
+        """Guarantee that the world model keeps a live LLM client for negotiations.
+
+        The dashboard can rebuild models or toggle the LLM flag, which occasionally leaves
+        ``self.llm_client`` as ``None`` even though each leader still holds a reference.
+        This helper synchronises the shared pointer so diplomacy always has a client when
+        at least one leader is still LLM-enabled.
+        """
+        if self.llm_client is not None and self.llm_client.enabled:
+            return
+        for leader in (self.leader_east, self.leader_west):
+            leader_client = getattr(leader, "llm_client", None)
+            if leader_client is not None and leader_client.enabled:
+                self.llm_client = leader_client
+                return
+
     def get_config_summary(self) -> dict:
         """Config card: snapshot the key knobs to serialize alongside a run."""
         return {
@@ -520,6 +536,7 @@ class WorldModel(mesa.Model):
         print(f"  World: season={season} (food/wood yield x{season_mult:.2f}), next={next_season}")
         self.agents.shuffle_do("step")
 
+        self._ensure_diplomacy_client()
         if self.llm_client is not None and self.llm_client.enabled:
             run_negotiation(self)
 

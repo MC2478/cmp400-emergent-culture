@@ -115,6 +115,42 @@ def compose_prompt(state: Dict[str, Any]) -> str:
     milestones = state.get("long_term_notes") or []
     milestone_block = "\n".join(f"    * {note}" for note in milestones) if milestones else "    * None yet."
 
+    neighbor_name = state.get("neighbor_name") or "Unknown"
+    neighbor_food = float(state.get("neighbor_food", 0.0) or 0.0)
+    neighbor_wealth = float(state.get("neighbor_wealth", 0.0) or 0.0)
+    neighbor_population = float(state.get("neighbor_population", 0.0) or 0.0)
+    neighbor_wood = float(state.get("neighbor_wood", 0.0) or 0.0)
+    neighbor_iron = float(state.get("neighbor_iron", 0.0) or 0.0)
+    neighbor_gold = float(state.get("neighbor_gold", 0.0) or 0.0)
+
+    def _food_ratio_est(food_amt: float, pop_amt: float) -> float:
+        required = (pop_amt / 10.0) * config.FOOD_PER_10_POP
+        return food_amt / required if required > 0 else 0.0
+
+    neighbor_food_ratio = _food_ratio_est(neighbor_food, neighbor_population)
+    my_food_ratio = pressures.get("food_ratio_horizon", 0.0)
+
+    def _diff_line(mine: float, theirs: float) -> str:
+        return f"{mine - theirs:+.2f}"
+
+    neighbor_next_prompt = state.get("neighbor_next_prompt", "Unknown")
+    neighbor_last_action = state.get("neighbor_last_action", None)
+    neighbor_last_reason = state.get("neighbor_last_reason", None)
+    neighbor_last_trait = state.get("neighbor_last_trait_adjustment", "unknown")
+    neighbor_interactions = state.get("neighbor_recent_interactions", "No data.")
+
+    neighbor_snapshot = (
+        f'Neighbor "{neighbor_name}" snapshot:\n'
+        f"  - Estimated food safety ratio: yours {my_food_ratio:.2f} vs theirs {neighbor_food_ratio:.2f}\n"
+        f"  - Neighbor buffers: food {neighbor_food:.2f} | wealth {neighbor_wealth:.2f} | wood {neighbor_wood:.2f} | iron {neighbor_iron:.2f} | gold {neighbor_gold:.2f}\n"
+        f"  - Your buffers minus theirs: food {_diff_line(food, neighbor_food)}, wealth {_diff_line(wealth, neighbor_wealth)}, wood {_diff_line(wood, neighbor_wood)}, iron {_diff_line(iron, neighbor_iron)}, gold {_diff_line(gold, neighbor_gold)}\n"
+        f"  - Their last directive: {neighbor_next_prompt}\n"
+        f"  - Last action/reason: {neighbor_last_action or 'unknown'} / {neighbor_last_reason or 'no reason recorded'}\n"
+        f"  - Recent diplomacy notes: {neighbor_interactions}\n"
+        f"  - Recent trait adjustment signal: {neighbor_last_trait}\n"
+        "  Blend these cues with ledger history to judge reciprocity and urgency; if a trade meaningfully helps either side, volunteer it."
+    )
+
     prompt = f"""
 You are the autonomous leader of "{name}" at step {step}. Population {pop:.0f} (requires {required_food:.2f} food/step). Your primary duty is to keep citizens fed, invest surpluses into infrastructure, and negotiate fair trades that respect reciprocity.
 
@@ -132,7 +168,7 @@ Resource pressures:
   - Food safety ratio (next {horizon_steps} steps): {pressures.get('food_ratio_horizon', 0.0):.2f}
   - Wood gap toward next tier: {pressures.get('wood_gap', 0.0):.2f}
   - Wealth gap toward next tier: {pressures.get('wealth_gap', 0.0):.2f}
-  - Infra ready now? {pressures.get('infra_ready')}
+  - Infra ready now- {pressures.get('infra_ready')}
 
 Infrastructure readiness:
 {infra_snapshot}{auto_infra_note}
@@ -143,14 +179,18 @@ Trade + relations:
   - Gift balance status: {gift_note}
   - Ledger: {ledger_line}
   - Long-term milestones:\n{milestone_block}
+{neighbor_snapshot}
 
 Guidance:
   1. Cover food/wages for the next {horizon_steps} steps before chasing prosperity.
   2. When buffers allow, gather the missing materials and set build_infrastructure:true; wood tier (5 wood + 2 wealth) should not be delayed once ready.
   3. Reciprocity matters: token gifts must include a matching wealth/metal concession unless your food safety ratio exceeds the neighbour's by ≥1.5×.
   4. Neutral/strained stances demand balanced trades. Only extend aid without payment when relations are cordial/allied and your buffer remains >1.5× safer; otherwise decline and explain.
-  5. Remember you can trade food, wealth, wood, iron, or gold; match what the other side actually requested and demand compensation if you did not initiate.
-  6. Use adaptation pressure notes to adjust traits or stance; log any deliberate changes in "trait_adjustment".
+5. Remember you can trade food, wealth, wood, iron, or gold; match what the other side actually requested and demand compensation if you did not initiate.
+6. When you genuinely want to open talks, set negotiation_intent.initiate true and specify what you want/offer; otherwise set initiate false and explain why.
+7. Use adaptation pressure notes to adjust traits or stance; log any deliberate changes in "trait_adjustment".
+8. Diplomacy relies on holistic judgement-blend relations, ledger balance, neighbour personality, buffer trends, and upcoming season risks instead of waiting for rigid numeric triggers.
+9. If you personally spot any plausible survival, resilience, or leverage gain from trade, immediately set negotiation_intent.initiate true with a concrete request/offer pair so dialogue begins even if the neighbour has been quiet.
 
 Recent directive: "{prior_directive}"
 {personality_line}
@@ -168,7 +208,15 @@ Respond with JSON:
   "build_infrastructure": <true|false>,
   "reason": "<why this plan fits now>",
   "next_prompt": "<directive for your future self>",
-  "trait_adjustment": "<trait guidance or 'no change'>"
+  "trait_adjustment": "<trait guidance or 'no change'>",
+  "negotiation_intent": {{
+      "initiate": <true|false>,
+      "request_resource": "<food|wealth|wood|iron|gold>",
+      "request_amount": <float>,
+      "offer_resource": "<resource or null>",
+      "offer_amount": <float>,
+      "reason": "<short justification>"
+  }}
 }}
 Shares must be between 0 and 1 and can sum to <= 1.0; leave unused capacity idle if helpful. The build flag buys the strongest tier you can pay for. No text outside that JSON object.
 """
@@ -333,7 +381,7 @@ def compose_negotiation_turn_prompt(side: str, session: Dict[str, Any], state: D
     dialogue = session.get("dialogue") or []
     if dialogue:
         dialogue_lines = "\n".join(
-            f"  {idx + 1}. {entry.get('speaker', '?')}: \"{entry.get('line', '')}\" "
+            f"  {idx + 1}. {entry.get('speaker', '-')}: \"{entry.get('line', '')}\" "
             f"(decision {entry.get('decision', 'counter')})"
             for idx, entry in enumerate(dialogue)
         )

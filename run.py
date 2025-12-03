@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TextIO
 
 import altair as alt
 import pandas as pd
@@ -32,6 +32,9 @@ class RunArtifactManager:
         self.root = Path(root)
         self.current_dir: Path | None = None
         self.chronicle_path: Path | None = None
+        self.sim_log_handle: TextIO | None = None
+        self.chart_data_path: Path | None = None
+        self.pending_params: Dict[str, Any] | None = None
 
     def _allocate_run_dir(self) -> Path:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -43,14 +46,19 @@ class RunArtifactManager:
         candidate.mkdir(parents=True, exist_ok=True)
         return candidate
 
-    def start_new_run(
-        self,
-        new_model: WorldModel,
-        params: Dict[str, Any],
-        previous_model: WorldModel | None = None,
-    ) -> None:
-        if previous_model is not None:
+    def prepare_for_model(self, params: Dict[str, Any], previous_model: WorldModel | None) -> None:
+        """Finalize any open run and stage params for the next run."""
+        if self.current_dir is not None:
             self.finalize(previous_model)
+        self.pending_params = dict(params)
+
+    def ensure_run_started(self, model: WorldModel) -> None:
+        if self.current_dir is not None:
+            return
+        params = self.pending_params or {}
+        self._start_run(model, params)
+
+    def _start_run(self, new_model: WorldModel, params: Dict[str, Any]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         run_dir = self._allocate_run_dir()
         self.current_dir = run_dir
@@ -59,19 +67,56 @@ class RunArtifactManager:
         new_model.enable_agent_state_logging(run_dir)
         new_model.save_config_summary(str(run_dir / "config_summary.txt"))
         new_model.save_chronicle(self.chronicle_path)
+        (run_dir / "starting_settings.txt").write_text(
+            "\n".join(f"{key}: {value}" for key, value in params.items()),
+            encoding="utf-8",
+        )
+        if self.sim_log_handle is not None:
+            try:
+                self.sim_log_handle.close()
+            except Exception:
+                pass
+        self.sim_log_handle = (run_dir / "simulation_output.log").open("w", encoding="utf-8")
+        self.chart_data_path = run_dir / "resource_history.csv"
+        self.pending_params = dict(params)
+        self.export_chart_data(new_model)
 
     def record_progress(self, model: WorldModel | None) -> None:
-        if model is None or self.chronicle_path is None:
+        if model is None or self.chronicle_path is None or self.current_dir is None:
             return
         model.save_chronicle(self.chronicle_path)
 
     def finalize(self, model: WorldModel | None) -> None:
-        if model is None:
+        if self.current_dir is None:
+            self.sim_log_handle = None
+            self.chronicle_path = None
+            self.chart_data_path = None
             return
-        self.record_progress(model)
-        model.close_agent_state_logs()
+        if model is not None:
+            self.record_progress(model)
+            self.export_chart_data(model)
+            model.close_agent_state_logs()
+        if self.sim_log_handle is not None:
+            try:
+                self.sim_log_handle.close()
+            except Exception:
+                pass
+            self.sim_log_handle = None
         self.current_dir = None
         self.chronicle_path = None
+        self.chart_data_path = None
+
+    def append_sim_output(self, text: str) -> None:
+        if not text or self.sim_log_handle is None:
+            return
+        self.sim_log_handle.write(text.rstrip() + "\n\n")
+        self.sim_log_handle.flush()
+
+    def export_chart_data(self, model: WorldModel | None) -> None:
+        if model is None or self.chart_data_path is None or self.current_dir is None:
+            return
+        df = model.datacollector.get_model_vars_dataframe()
+        df.to_csv(self.chart_data_path, index=True)
 
 
 def default_params() -> Dict[str, Any]:
@@ -85,6 +130,7 @@ def default_params() -> Dict[str, Any]:
         "population_E": int(config.STARTING_POPULATION),
         "population_W": int(config.STARTING_POPULATION),
         "use_llm": True,
+        "seed": 42,
     }
 
 
@@ -132,8 +178,13 @@ SERIES = [
 
 def build_model(params: Dict[str, Any]) -> WorldModel:
     """Instantiate the WorldModel with the chosen knobs."""
+    seed_value = params.get("seed")
+    try:
+        random_seed = int(seed_value)
+    except (TypeError, ValueError):
+        random_seed = None
     return WorldModel(
-        random_seed=None,
+        random_seed=random_seed,
         initial_wealth=params["initial_wealth"],
         initial_food=params["initial_food"],
         initial_wood=params["initial_wood"],
@@ -182,6 +233,17 @@ def ParameterControls(params: Dict[str, Any], on_change) -> None:
         solara.Text(
             f"LLM status: {'ON' if params['use_llm'] else 'OFF'}",
             style="font-weight: bold;",
+        )
+        def _update_seed(value: int) -> None:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                parsed = 0
+            on_change("seed", parsed)
+        solara.InputInt(
+            label="Random Seed",
+            value=params.get("seed", 0),
+            on_value=_update_seed,
         )
 
 
@@ -286,14 +348,14 @@ def Dashboard() -> None:
     model_ref = solara.use_ref(None)
     if model_ref.current is None:
         initial_model = build_model(params)
-        artifact_manager.start_new_run(initial_model, params, None)
+        artifact_manager.prepare_for_model(params, None)
         model_ref.current = initial_model
 
     solara.use_effect(lambda: (lambda: artifact_manager.finalize(model_ref.current)), [])
 
     def replace_model(new_params: Dict[str, Any]) -> None:
+        artifact_manager.prepare_for_model(new_params, model_ref.current)
         new_model = build_model(new_params)
-        artifact_manager.start_new_run(new_model, new_params, model_ref.current)
         model_ref.current = new_model
         set_steps_queue(0)
         set_is_running(False)
@@ -327,10 +389,13 @@ def Dashboard() -> None:
     def run_single_step() -> None:
         if model_ref.current is None:
             return
+        artifact_manager.ensure_run_started(model_ref.current)
         output = capture_step_output(model_ref.current)
         if output:
             append_log_entry(output)
+            artifact_manager.append_sim_output(output)
         artifact_manager.record_progress(model_ref.current)
+        artifact_manager.export_chart_data(model_ref.current)
         trigger_refresh()
 
     def queue_steps(count: int) -> None:

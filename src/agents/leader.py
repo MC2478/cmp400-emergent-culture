@@ -236,8 +236,20 @@ class LeaderAgent(mesa.Agent):
         offer_resource = None
         offer_amount = 0.0
         urgency = "low"
+        neighbor = self.neighbor
 
-        if ratio < 1.05:
+        def _neighbor_food_ratio() -> float | None:
+            if neighbor is None:
+                return None
+            required_food_neighbor = (neighbor.population / 10.0) * FOOD_PER_10_POP
+            if required_food_neighbor <= 0:
+                return None
+            return neighbor.food / required_food_neighbor
+
+        neighbor_ratio = _neighbor_food_ratio()
+        wealth_gap = (neighbor.wealth - territory.wealth) if neighbor is not None else 0.0
+
+        if ratio < 1.15 or (neighbor_ratio is not None and neighbor_ratio - ratio > 0.15 and ratio < 1.3):
             # Use horizon shortfall so shallow buffers still trigger a request.
             if shortfall_horizon > 0.2 * required:
                 request_resource = "food"
@@ -273,6 +285,40 @@ class LeaderAgent(mesa.Agent):
                 reason = "Ready to upgrade infrastructure; missing final wealth."
                 urgency = "infrastructure"
 
+        if (
+            request_resource is None
+            and neighbor is not None
+            and neighbor_ratio is not None
+            and ratio >= 1.25
+            and neighbor_ratio < 1.0
+            and territory.food > required * 1.1
+        ):
+            # Surplus food vs neighbour shortage: proactively offer food in exchange for wealth.
+            request_resource = "wealth"
+            desired = wealth_gap * 0.4 if wealth_gap > 0 else 0.8
+            request_amount = round(max(0.2, min(1.5, desired)), 2)
+            offer_resource = "food"
+            offer_amount = round(min(territory.food * 0.3, max(0.2, request_amount * 1.2)), 2)
+            reason = (
+                "Neighbor food buffers are weak while ours are strong; convert surplus food into wealth and keep reciprocity."
+            )
+            urgency = "opportunity"
+
+        if (
+            request_resource is None
+            and neighbor is not None
+            and wealth_gap > 1.5
+            and territory.food > required * 0.9
+        ):
+            # Keep flows active even without scarcity when the neighbour sits on a wealth surplus.
+            request_resource = "wealth"
+            request_amount = round(min(wealth_gap * 0.4, 1.2), 2)
+            if territory.food > required * 0.9:
+                offer_resource = "food"
+                offer_amount = round(min(territory.food * 0.25, max(0.1, request_amount)), 2)
+            reason = "Wealth imbalance is growing; request a share while offering food to maintain goodwill."
+            urgency = "balance"
+
         if request_resource:
             intent.update(
                 {
@@ -291,6 +337,53 @@ class LeaderAgent(mesa.Agent):
 
     def _refresh_negotiation_intent(self) -> None:
         self.negotiation_intent = self._compute_negotiation_intent()
+
+    def _apply_negotiation_override(self, decision: Dict[str, Any]) -> None:
+        override = decision.get("negotiation_intent")
+        if not isinstance(override, dict):
+            self._refresh_negotiation_intent()
+            return
+        initiate = bool(override.get("initiate"))
+        if not initiate:
+            self.negotiation_intent = {"initiate": False, "reason": override.get("reason", "LLM chose not to trade.")}
+            return
+        request_resource = str(override.get("request_resource", "")).strip().lower()
+        request_amount = override.get("request_amount", 0.0)
+        offer_resource = override.get("offer_resource")
+        offer_amount = override.get("offer_amount", 0.0)
+        try:
+            request_amount = float(request_amount)
+        except (TypeError, ValueError):
+            request_amount = 0.0
+        try:
+            offer_amount = float(offer_amount)
+        except (TypeError, ValueError):
+            offer_amount = 0.0
+        valid_request = request_resource in {"food", "wealth", "wood", "iron", "gold"} and request_amount > 0
+        valid_offer = offer_resource in {"food", "wealth", "wood", "iron", "gold"} and offer_amount > 0
+        if not valid_request:
+            parsed_dialogue = {
+                "initiate": True,
+                "dialogue_only": True,
+                "reason": override.get("reason", "LLM requested an exploratory dialogue."),
+                "urgency": override.get("urgency", "llm"),
+                "offer_resource": offer_resource if valid_offer else None,
+                "offer_amount": round(max(0.0, offer_amount), 2) if valid_offer else 0.0,
+                "debug_source": "llm_dialogue",
+            }
+            self.negotiation_intent = parsed_dialogue
+            return
+        parsed = {
+            "initiate": True,
+            "request_resource": request_resource,
+            "request_amount": round(request_amount, 2),
+            "offer_resource": offer_resource if valid_offer else None,
+            "offer_amount": round(max(0.0, offer_amount), 2) if valid_offer else 0.0,
+            "reason": override.get("reason", "LLM-requested trade."),
+            "urgency": override.get("urgency", "llm"),
+            "debug_source": "llm_decision",
+        }
+        self.negotiation_intent = parsed
 
     def _snapshot(self) -> Dict[str, Any]:
         """Snapshot card: grab a simple before/after view for chronicle logging."""
@@ -394,6 +487,38 @@ class LeaderAgent(mesa.Agent):
                 }
             )
         state["history_text"] = summarise_memory_for_prompt(self.memory_events)
+
+        neighbor_leader: Optional["LeaderAgent"] = None
+        if hasattr(self.model, "leader_east") and hasattr(self.model, "leader_west"):
+            if getattr(self.model, "leader_east", None) is self:
+                neighbor_leader = getattr(self.model, "leader_west", None)
+            elif getattr(self.model, "leader_west", None) is self:
+                neighbor_leader = getattr(self.model, "leader_east", None)
+        if neighbor_leader is not None:
+            neighbor_directive = getattr(neighbor_leader, "next_directive", "") or "No directive logged."
+            neighbor_last_action = getattr(neighbor_leader, "last_action", None)
+            neighbor_last_reason = getattr(neighbor_leader, "last_reason", None)
+            neighbor_trait_text = getattr(neighbor_leader, "last_trait_adjustment_text", "no change")
+            neighbor_interactions = "\n".join(neighbor_leader.interaction_log[-3:]) or "No recent diplomacy notes."
+            state.update(
+                {
+                    "neighbor_next_prompt": neighbor_directive,
+                    "neighbor_last_action": neighbor_last_action,
+                    "neighbor_last_reason": neighbor_last_reason,
+                    "neighbor_last_trait_adjustment": neighbor_trait_text,
+                    "neighbor_recent_interactions": neighbor_interactions,
+                }
+            )
+        else:
+            state.update(
+                {
+                    "neighbor_next_prompt": "Unknown",
+                    "neighbor_last_action": None,
+                    "neighbor_last_reason": None,
+                    "neighbor_last_trait_adjustment": "unknown",
+                    "neighbor_recent_interactions": "No data.",
+                }
+            )
         return state
 
     def record_step_outcome(
@@ -717,7 +842,7 @@ class LeaderAgent(mesa.Agent):
             used_llm=llm_used,
         )
         self.model.log_agent_state(self, decision, llm_used)
-        self._refresh_negotiation_intent()
+        self._apply_negotiation_override(decision)
 
     def _apply_trait_adjustment_text(self, text: str) -> None:
         """Trait adjuster: interpret and apply trait changes when cooldown allows."""

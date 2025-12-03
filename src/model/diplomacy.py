@@ -271,8 +271,89 @@ def run_negotiation(model: Any) -> None:
                 east_intent = intent
             else:
                 west_intent = intent
+    def _intent_for_request(
+        requester: str,
+        *,
+        request_resource: str,
+        request_amount: float,
+        reason: str,
+        urgency: str = "balance",
+        requester_state: Any,
+    ) -> Dict[str, Any]:
+        offer_resource = None
+        offer_amount = 0.0
+        wealth_available = getattr(requester_state, "wealth", 0.0)
+        if request_resource != "wealth" and wealth_available > 0.4:
+            offer_resource = "wealth"
+            offer_amount = round(min(wealth_available * 0.25, max(0.1, request_amount * 0.5)), 2)
+        return {
+            "initiate": True,
+            "request_resource": request_resource,
+            "request_amount": round(max(0.1, request_amount), 2),
+            "offer_resource": offer_resource,
+            "offer_amount": offer_amount,
+            "reason": reason,
+            "urgency": urgency,
+            "debug_auto": True,
+        }
+
+    forced_interval = getattr(config, "DIPLOMACY_BALANCE_INTERVAL", 4)
+    if forced_interval and model.steps > 0 and model.steps % forced_interval == 0:
+        if not east_intent.get("initiate") and not west_intent.get("initiate"):
+            food_gap = model.east.food - model.west.food
+            wealth_gap = model.east.wealth - model.west.wealth
+            if abs(food_gap) >= 0.5:
+                if food_gap > 0:
+                    west_intent = _intent_for_request(
+                        "West",
+                        request_resource="food",
+                        request_amount=min(food_gap * 0.5, 1.2),
+                        reason="Periodic balance: catch up on food stores.",
+                        requester_state=model.west,
+                    )
+                else:
+                    east_intent = _intent_for_request(
+                        "East",
+                        request_resource="food",
+                        request_amount=min(abs(food_gap) * 0.5, 1.2),
+                        reason="Periodic balance: catch up on food stores.",
+                        requester_state=model.east,
+                    )
+            elif abs(wealth_gap) >= 0.6:
+                if wealth_gap > 0:
+                    west_intent = _intent_for_request(
+                        "West",
+                        request_resource="wealth",
+                        request_amount=min(wealth_gap * 0.4, 1.0),
+                        reason="Periodic balance: even out wealth reserves.",
+                        requester_state=model.west,
+                    )
+                else:
+                    east_intent = _intent_for_request(
+                        "East",
+                        request_resource="wealth",
+                        request_amount=min(abs(wealth_gap) * 0.4, 1.0),
+                        reason="Periodic balance: even out wealth reserves.",
+                        requester_state=model.east,
+                    )
+
     model.leader_east.negotiation_intent = east_intent
     model.leader_west.negotiation_intent = west_intent
+    if not east_intent.get("initiate") and not west_intent.get("initiate"):
+        # Even without a concrete trade ask, schedule an exploratory dialogue so LLMs can build rapport.
+        initiator = "East" if model.steps % 2 == 0 else "West"
+        exploratory = {
+            "initiate": True,
+            "dialogue_only": True,
+            "reason": "Maintain diplomatic dialogue even without immediate trade.",
+            "urgency": "rapport",
+        }
+        if initiator == "East":
+            east_intent = exploratory
+            model.leader_east.negotiation_intent = exploratory
+        else:
+            west_intent = exploratory
+            model.leader_west.negotiation_intent = exploratory
     if not llm_available:
         entry = {
             "event_type": "negotiation",
@@ -425,80 +506,78 @@ def run_negotiation(model: Any) -> None:
                 return False
         return True
 
-def _proposal_magnitude(proposal: Dict[str, Any]) -> float:
-    total = 0.0
-    for key in (
-        "food_from_east_to_west",
-        "wealth_from_west_to_east",
-        "wood_from_east_to_west",
-        "wood_from_west_to_east",
-        "iron_from_east_to_west",
-        "iron_from_west_to_east",
-        "gold_from_east_to_west",
-        "gold_from_west_to_east",
-    ):
+    def _proposal_magnitude(proposal: Dict[str, Any]) -> float:
+        total = 0.0
+        for key in (
+            "food_from_east_to_west",
+            "wealth_from_west_to_east",
+            "wood_from_east_to_west",
+            "wood_from_west_to_east",
+            "iron_from_east_to_west",
+            "iron_from_west_to_east",
+            "gold_from_east_to_west",
+            "gold_from_west_to_east",
+        ):
+            try:
+                total += abs(float(proposal.get(key, 0.0) or 0.0))
+            except (TypeError, ValueError):
+                continue
+        return total
+
+    def _sigmoid(x: float) -> float:
         try:
-            total += abs(float(proposal.get(key, 0.0) or 0.0))
-        except (TypeError, ValueError):
-            continue
-    return total
+            return 1.0 / (1.0 + math.exp(-x))
+        except OverflowError:
+            return 0.0 if x < 0 else 1.0
 
+    def _acceptance_probability(
+        *,
+        east_ratio: float,
+        west_ratio: float,
+        east_safety: float,
+        west_safety: float,
+        relation_score: float,
+        relation_label: str,
+        east_vec: Dict[str, float],
+        west_vec: Dict[str, float],
+        trade_value: float,
+    ) -> tuple[float, float]:
+        """Score-to-probability: fairness + safety + relation + traits + size penalty."""
 
-def _sigmoid(x: float) -> float:
-    try:
-        return 1.0 / (1.0 + math.exp(-x))
-    except OverflowError:
-        return 0.0 if x < 0 else 1.0
+        def _fairness_component(ratio: float) -> float:
+            return max(0.0, 1.0 - abs(1.0 - ratio))
 
+        fairness = (_fairness_component(east_ratio) + _fairness_component(west_ratio)) / 2.0
 
-def _acceptance_probability(
-    *,
-    east_ratio: float,
-    west_ratio: float,
-    east_safety: float,
-    west_safety: float,
-    relation_score: float,
-    relation_label: str,
-    east_vec: Dict[str, float],
-    west_vec: Dict[str, float],
-    trade_value: float,
-) -> tuple[float, float]:
-    """Score-to-probability: fairness + safety + relation + traits + size penalty."""
+        safety = 0.0
+        if east_safety >= 1.0 and west_safety >= 1.0:
+            safety = 0.2
+        elif east_safety < 0.9 or west_safety < 0.9:
+            safety = -0.2
 
-    def _fairness_component(ratio: float) -> float:
-        return max(0.0, 1.0 - abs(1.0 - ratio))
+        relation_bonus = 0.0
+        if relation_label == "allied":
+            relation_bonus = 0.4
+        elif relation_label == "cordial":
+            relation_bonus = 0.2
+        elif relation_label == "strained":
+            relation_bonus = -0.2
+        elif relation_label == "hostile":
+            relation_bonus = -0.4
 
-    fairness = (_fairness_component(east_ratio) + _fairness_component(west_ratio)) / 2.0
+        def _trait_push(vec: Dict[str, float]) -> float:
+            coop = float(vec.get("cooperation", 0.5) or 0.5)
+            trust = float(vec.get("trust_in_others", 0.5) or 0.5)
+            aggression = float(vec.get("aggression", 0.5) or 0.5)
+            return (coop + trust) * 0.3 - aggression * 0.2
 
-    safety = 0.0
-    if east_safety >= 1.0 and west_safety >= 1.0:
-        safety = 0.2
-    elif east_safety < 0.9 or west_safety < 0.9:
-        safety = -0.2
+        trait_adj = (_trait_push(east_vec) + _trait_push(west_vec)) / 2.0
 
-    relation_bonus = 0.0
-    if relation_label == "allied":
-        relation_bonus = 0.4
-    elif relation_label == "cordial":
-        relation_bonus = 0.2
-    elif relation_label == "strained":
-        relation_bonus = -0.2
-    elif relation_label == "hostile":
-        relation_bonus = -0.4
+        size_adj = -0.2 if trade_value > 4.0 else 0.0
 
-    def _trait_push(vec: Dict[str, float]) -> float:
-        coop = float(vec.get("cooperation", 0.5) or 0.5)
-        trust = float(vec.get("trust_in_others", 0.5) or 0.5)
-        aggression = float(vec.get("aggression", 0.5) or 0.5)
-        return (coop + trust) * 0.3 - aggression * 0.2
-
-    trait_adj = (_trait_push(east_vec) + _trait_push(west_vec)) / 2.0
-
-    size_adj = -0.2 if trade_value > 4.0 else 0.0
-
-    score = fairness + safety + relation_bonus + trait_adj + size_adj
-    prob = _sigmoid(score)
-    return prob, score
+        score = fairness + safety + relation_bonus + trait_adj + size_adj
+        prob = _sigmoid(score)
+        return prob, score
 
     while (session.max_turns is None or session.turn_count < session.max_turns) and session.outcome == "pending":
         turn = llm_client.negotiate_turn(side=speaker, session=session.payload(), state=state)
