@@ -1,0 +1,57 @@
+Step 1:
+  World: season=spring (food/wood yield x1.00), next=spring
+[LLM disabled] LLM decision request failed (HTTPConnectionPool(host='127.0.0.1', port=1234): Max retries exceeded with url: /v1/chat/completions (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x000001F713F33910>: Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it'))). Falling back to heuristic policy until you toggle LLM decisions off/on again.
+[INFO] LLM produced an invalid action, so I am using the heuristic policy instead.
+[INFO] LLM produced an invalid action, so I am using the heuristic policy instead.
+  West: action=mixed_allocation (LLM: no)
+    - Reason:
+      Fallback heuristic decision.
+    - Work allocation: focus_food:0.40, focus_wood:0.42, focus_wealth:0.18, focus_iron:0.00, focus_gold:0.00
+    - Traits: [Wealth-hoarder] - I guard wealth and part with it only when buffers feel safe (cooldown 4)
+      Pressures: exploitation=0, starvation=0, failed_strategy=0
+    - Population: 100 -> 100
+
+  East: action=mixed_allocation (LLM: no)
+    - Reason:
+      Fallback heuristic decision.
+    - Work allocation: focus_food:0.40, focus_wood:0.42, focus_wealth:0.18, focus_iron:0.00, focus_gold:0.00
+    - Traits: [Opportunistic] - I pivot quickly when leverage appears (cooldown 4)
+      Pressures: exploitation=0, starvation=0, failed_strategy=0
+    - Population: 100 -> 100
+
+  Resources (before -> after)
+  West| food 2.07->2.30 | wealth 4.50->4.73 | wood 1.30->1.77 | iron 1.34->1.34 | gold 0.42->0.42 | infra 0->0 | pop 100->100
+  East| food 2.07->2.44 | wealth 4.55->4.58 | wood 1.01->1.23 | iron 1.02->1.02 | gold 0.09->0.09 | infra 0->0 | pop 100->100
+
+  Negotiation at step 1 (outcome=declined, trade_type=no_trade), turns=0:
+
+      (1) West: "East, let's hold steady; I cannot commit without clearer terms. (request failed)" [decline]
+    Trade table:
+      | resource | East->West | West->East |
+      | food     | 0.00 | -0.00 |
+      | wealth   | -0.00 | 0.00 |
+      | wood     | 0.00 | 0.00 |
+      | iron     | 0.00 | 0.00 |
+      | gold     | 0.00 | 0.00 |
+      East after trade: food 2.44->2.44, wealth 4.58->4.58, iron 1.02->1.02, gold 0.09->0.09
+      West after trade: food 2.30->2.30, wealth 4.73->4.73, iron 1.34->1.34, gold 0.42->0.42
+      Relation now: neutral (guarded neutral) score=0.00
+
+  Wages:
+  West| wealth 4.73->4.68 | mult 1.00->1.00 | strike False | unpaid 0.00
+  East| wealth 4.58->4.53 | mult 1.00->1.00 | strike False | unpaid 0.00
+
+  Upkeep:
+  West| food 2.30->1.80 | wealth 4.68->4.68 | wood 1.77->1.77 | iron 1.34->1.34 | gold 0.42->0.42 | infra 0->0 | pop 100->110 | req_food 0.50
+  East| food 2.44->1.94 | wealth 4.53->4.53 | wood 1.23->1.23 | iron 1.02->1.02 | gold 0.09->0.09 | infra 0->0 | pop 100->110 | req_food 0.50
+
+------------------------------------------------------------
+
+Saved chronicle to C:\Users\micha\Documents\cmp400-emergent-culture\logs\run_2025-12-03_12-30-17_seed42_steps1\demo_seed42_steps1.json
+Chronicle summary:
+  Events logged: 4
+  Action counts: {'mixed_allocation': 2}
+  East pop -> min 110.0, mean 110.0, max 110.0
+  West pop -> min 110.0, mean 110.0, max 110.0
+  East food -> min 1.9, mean 1.9, max 1.9
+  West food -> min 1.8, mean 1.8, max 1.8
